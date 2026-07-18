@@ -9,6 +9,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 FROM base AS builder
+ENV DATABASE_URL=:memory: DATA_DIR=/tmp/telmi-build-data
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN pnpm build
