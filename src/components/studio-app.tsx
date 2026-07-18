@@ -714,8 +714,8 @@ function CreationWizard({
           <div>
             <strong>Modification du brouillon</strong>
             <span>
-              Les réponses sont préremplies. Le scénario existant reste
-              consultable tant que vous ne le régénérez pas.
+              Les réponses sont préremplies. Si un scénario existe déjà, il
+              reste conservé et consultable.
             </span>
           </div>
           <button className="ghost" onClick={onCancel}>
