@@ -8,7 +8,10 @@ import {
   BookOpen,
   ChevronRight,
   CircleDollarSign,
+  Copy,
+  ExternalLink,
   FileText,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Plus,
@@ -1678,18 +1681,15 @@ function StoryStudio({
       const result = await api<{
         narrative: NarrativeStory;
         validation: typeof validation;
-      }>(
-        `/api/stories/${story.id}/versions/${version.id}/generate-narrative`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            mode: "refine",
-            instruction: refinementInstruction || undefined,
-            preserveSceneIds: preservedSceneIds,
-            preserveChoiceIds: preservedChoiceIds,
-          }),
-        },
-      );
+      }>(`/api/stories/${story.id}/versions/${version.id}/generate-narrative`, {
+        method: "POST",
+        body: JSON.stringify({
+          mode: "refine",
+          instruction: refinementInstruction || undefined,
+          preserveSceneIds: preservedSceneIds,
+          preserveChoiceIds: preservedChoiceIds,
+        }),
+      });
       setNarrative(result.narrative);
       setJson(JSON.stringify(result.narrative, null, 2));
       setValidation(result.validation);
@@ -1938,8 +1938,8 @@ function StoryStudio({
                   <h3>Améliorer ou terminer avec l’IA</h3>
                   <p>
                     Modifiez d’abord les scènes souhaitées. Elles seront
-                    verrouillées pendant que l’IA harmonise et complète le
-                    reste du scénario.
+                    verrouillées pendant que l’IA harmonise et complète le reste
+                    du scénario.
                   </p>
                   {preservedSceneIds.length > 0 && (
                     <small>
@@ -2155,10 +2155,7 @@ function SceneEditorCard({
               <div className="scene-choice-fields">
                 <strong>Choix proposés après cette scène</strong>
                 {draftChoices.map((choice, choiceIndex) => (
-                  <Field
-                    key={choice.id}
-                    label={`Choix ${choiceIndex + 1}`}
-                  >
+                  <Field key={choice.id} label={`Choix ${choiceIndex + 1}`}>
                     <input
                       value={choice.label}
                       maxLength={160}
@@ -2197,6 +2194,90 @@ function SceneEditorCard({
   );
 }
 
+type ProviderType = "text" | "image" | "tts";
+type ProviderPreset =
+  | "openrouter"
+  | "openai"
+  | "mistral"
+  | "groq"
+  | "elevenlabs"
+  | "custom";
+type ProviderSettings = {
+  type: ProviderType;
+  provider: string;
+  baseUrl?: string | null;
+  model?: string | null;
+  enabled: boolean;
+  apiKey?: string;
+  configured?: boolean;
+};
+type ProviderModelOption = {
+  id: string;
+  name: string;
+  description?: string;
+};
+
+const providerChoices: Record<
+  ProviderType,
+  Array<{ id: ProviderPreset; label: string }>
+> = {
+  text: [
+    { id: "openrouter", label: "OpenRouter" },
+    { id: "openai", label: "OpenAI" },
+    { id: "mistral", label: "Mistral AI" },
+    { id: "groq", label: "Groq" },
+    { id: "custom", label: "Personnalisé" },
+  ],
+  image: [
+    { id: "openrouter", label: "OpenRouter" },
+    { id: "openai", label: "OpenAI" },
+    { id: "custom", label: "Personnalisé" },
+  ],
+  tts: [
+    { id: "elevenlabs", label: "ElevenLabs" },
+    { id: "custom", label: "Personnalisé (compatible ElevenLabs)" },
+  ],
+};
+
+const providerDefaults: Record<
+  Exclude<ProviderPreset, "custom">,
+  { baseUrl: string; model?: string }
+> = {
+  openrouter: {
+    baseUrl: "https://openrouter.ai/api/v1",
+  },
+  openai: {
+    baseUrl: "https://api.openai.com/v1",
+  },
+  mistral: {
+    baseUrl: "https://api.mistral.ai/v1",
+  },
+  groq: {
+    baseUrl: "https://api.groq.com/openai/v1",
+  },
+  elevenlabs: {
+    baseUrl: "https://api.elevenlabs.io/v1",
+    model: "eleven_multilingual_v2",
+  },
+};
+
+function inferProviderPresetClient(provider: ProviderSettings): ProviderPreset {
+  try {
+    const hostname = new URL(provider.baseUrl ?? "").hostname;
+    if (hostname === "openrouter.ai") return "openrouter";
+    if (hostname === "api.openai.com") return "openai";
+    if (hostname === "api.mistral.ai") return "mistral";
+    if (hostname === "api.groq.com") return "groq";
+    if (hostname === "api.elevenlabs.io") return "elevenlabs";
+  } catch {
+    // An empty or custom URL belongs to the manual mode.
+  }
+  const value = provider.provider.toLowerCase() as ProviderPreset;
+  return providerChoices[provider.type].some((choice) => choice.id === value)
+    ? value
+    : "custom";
+}
+
 function SettingsPanel({
   api,
   onNotice,
@@ -2212,36 +2293,41 @@ function SettingsPanel({
     storyBudgetCents: number;
     storeEnabled: boolean;
     n8nWebhookUrl?: string | null;
-    providers: Array<{
-      type: "text" | "image" | "tts";
-      provider: string;
-      baseUrl?: string | null;
-      model?: string | null;
-      enabled: boolean;
-      apiKey?: string;
-    }>;
+    providers: ProviderSettings[];
   };
   const [data, setData] = useState<SettingsData | null>(null);
   const [storeKey, setStoreKey] = useState("");
   useEffect(() => {
-    void api<SettingsData>("/api/settings").then((value) =>
-      setData({
-        ...value,
-        providers: ["text", "image", "tts"].map(
-          (type) =>
-            value.providers.find((item) => item.type === type) ?? {
-              type: type as "text" | "image" | "tts",
-              provider:
-                type === "tts"
-                  ? "elevenlabs"
-                  : type === "image"
-                    ? "openai"
-                    : "openrouter",
+    void api<SettingsData>("/api/settings").then((value) => {
+      const providers = (["text", "image", "tts"] as ProviderType[]).map(
+        (type): ProviderSettings => {
+          const saved = value.providers.find((item) => item.type === type);
+          const fallbackPreset: Exclude<ProviderPreset, "custom"> =
+            type === "tts"
+              ? "elevenlabs"
+              : type === "image"
+                ? "openai"
+                : "openrouter";
+          if (!saved)
+            return {
+              type,
+              provider: fallbackPreset,
+              baseUrl: providerDefaults[fallbackPreset].baseUrl,
+              model: providerDefaults[fallbackPreset].model ?? "",
               enabled: true,
-            },
-        ),
-      }),
-    );
+              configured: false,
+            };
+          const preset = inferProviderPresetClient(saved);
+          return {
+            ...saved,
+            baseUrl:
+              saved.baseUrl ||
+              (preset === "custom" ? "" : providerDefaults[preset].baseUrl),
+          };
+        },
+      );
+      setData({ ...value, providers });
+    });
   }, [api]);
   if (!data) return <Splash />;
   const updateProvider = (
@@ -2305,57 +2391,18 @@ function SettingsPanel({
       </section>
       <section className="page-card">
         <h2>Fournisseurs IA</h2>
+        <p className="settings-intro">
+          Choisissez un fournisseur : le studio charge ensuite uniquement les
+          modèles compatibles avec l’usage concerné. Utilisez « Personnalisé »
+          pour une autre API compatible.
+        </p>
         {data.providers.map((provider, index) => (
-          <div className="provider-row" key={provider.type}>
-            <strong>
-              {provider.type === "text"
-                ? "Scénario"
-                : provider.type === "image"
-                  ? "Images"
-                  : "Narration"}
-            </strong>
-            <div className="form-grid">
-              <Field label="Fournisseur">
-                <input
-                  value={provider.provider}
-                  onChange={(e) =>
-                    updateProvider(index, { provider: e.target.value })
-                  }
-                />
-              </Field>
-              <Field label="Modèle">
-                <input
-                  value={provider.model ?? ""}
-                  onChange={(e) =>
-                    updateProvider(index, { model: e.target.value })
-                  }
-                />
-              </Field>
-              <Field label="URL API">
-                <input
-                  value={provider.baseUrl ?? ""}
-                  onChange={(e) =>
-                    updateProvider(index, { baseUrl: e.target.value })
-                  }
-                  placeholder={
-                    provider.type === "text"
-                      ? "https://openrouter.ai/api/v1"
-                      : "URL par défaut"
-                  }
-                />
-              </Field>
-              <Field label="Clé API">
-                <input
-                  type="password"
-                  value={provider.apiKey ?? ""}
-                  onChange={(e) =>
-                    updateProvider(index, { apiKey: e.target.value })
-                  }
-                  placeholder="Laisser vide pour conserver"
-                />
-              </Field>
-            </div>
-          </div>
+          <ProviderSettingsCard
+            key={provider.type}
+            provider={provider}
+            api={api}
+            onChange={(patch) => updateProvider(index, patch)}
+          />
         ))}
       </section>
       <section className="page-card">
@@ -2378,19 +2425,87 @@ function SettingsPanel({
           />
           <span /> Activer le store privé
         </label>
-        <button
-          className="secondary"
-          onClick={async () => {
-            const result = await api<{ storeApiKey: string }>(
-              "/api/settings/store-key",
-              { method: "POST", body: "{}" },
-            );
-            setStoreKey(result.storeApiKey);
-          }}
-        >
-          Faire tourner la clé du store
-        </button>
-        {storeKey && <code className="secret-code small">{storeKey}</code>}
+        <div className="store-guide">
+          <div className="store-guide-heading">
+            <span>
+              <KeyRound />
+            </span>
+            <div>
+              <strong>Connecter ce store à Telmi Sync</strong>
+              <p>
+                La clé protège le catalogue, les couvertures et les ZIP. Une
+                nouvelle clé invalide immédiatement l’ancienne.
+              </p>
+            </div>
+          </div>
+          <ol>
+            <li>Activez le store privé puis enregistrez les paramètres.</li>
+            <li>Générez une clé et copiez-la immédiatement.</li>
+            <li>
+              Dans Telmi Sync, ouvrez <strong>Stores</strong>, puis cliquez sur{" "}
+              <strong>+ Ajouter un store</strong>.
+            </li>
+            <li>
+              Collez l’adresse complète ci-dessous et validez le nouveau store.
+            </li>
+          </ol>
+          <div className="store-url-example">
+            <small>Adresse à saisir dans Telmi Sync</small>
+            <code>
+              {`${data.publicUrl.replace(/\/$/, "")}/store?api_key=${storeKey || "VOTRE_CLE"}`}
+            </code>
+            {storeKey && (
+              <button
+                className="ghost compact"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(
+                    `${data.publicUrl.replace(/\/$/, "")}/store?api_key=${storeKey}`,
+                  );
+                  onNotice({
+                    tone: "ok",
+                    text: "Adresse du store copiée.",
+                  });
+                }}
+              >
+                <Copy /> Copier l’adresse
+              </button>
+            )}
+          </div>
+          <div className="inline-actions">
+            <button
+              className="secondary"
+              onClick={async () => {
+                if (
+                  !window.confirm(
+                    "Générer une nouvelle clé désactivera immédiatement l’ancienne dans Telmi Sync. Continuer ?",
+                  )
+                )
+                  return;
+                const result = await api<{ storeApiKey: string }>(
+                  "/api/settings/store-key",
+                  { method: "POST", body: "{}" },
+                );
+                setStoreKey(result.storeApiKey);
+              }}
+            >
+              <KeyRound /> Générer une nouvelle clé
+            </button>
+            <a
+              className="ghost link-button compact"
+              href="https://wiki.telmi.fr/stores/stores_prives/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Guide Telmi <ExternalLink />
+            </a>
+          </div>
+          {storeKey && (
+            <div className="fresh-store-key">
+              <strong>Clé générée — copiez-la maintenant</strong>
+              <code className="secret-code small">{storeKey}</code>
+            </div>
+          )}
+        </div>
       </section>
       <OperationsPanel api={api} onNotice={onNotice} />
       <div className="settings-save">
@@ -2414,6 +2529,275 @@ function SettingsPanel({
           Enregistrer les paramètres
         </button>
       </div>
+    </div>
+  );
+}
+
+function ProviderSettingsCard({
+  provider,
+  api,
+  onChange,
+}: {
+  provider: ProviderSettings;
+  api: <T>(url: string, init?: RequestInit) => Promise<T>;
+  onChange: (patch: Partial<ProviderSettings>) => void;
+}) {
+  const preset = inferProviderPresetClient(provider);
+  const effectiveBaseUrl =
+    preset === "custom" ? provider.baseUrl : providerDefaults[preset].baseUrl;
+  const [catalog, setCatalog] = useState<{
+    status: "idle" | "loading" | "ready" | "error";
+    list: ProviderModelOption[];
+    error?: string;
+  }>({ status: "idle", list: [] });
+
+  const requestCatalog = async (includeTypedKey: boolean) => {
+    if (preset === "custom" && !provider.baseUrl) {
+      setCatalog({
+        status: "error",
+        list: [],
+        error: "Saisissez d’abord l’URL de l’API personnalisée.",
+      });
+      return;
+    }
+    setCatalog((current) => ({
+      ...current,
+      status: "loading",
+      error: undefined,
+    }));
+    try {
+      const result = await api<{ list: ProviderModelOption[] }>(
+        "/api/providers/models",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            type: provider.type,
+            preset,
+            baseUrl: effectiveBaseUrl || undefined,
+            apiKey: includeTypedKey ? provider.apiKey || undefined : undefined,
+          }),
+        },
+      );
+      setCatalog({ status: "ready", list: result.list });
+    } catch (error) {
+      setCatalog({
+        status: "error",
+        list: [],
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (
+        !active ||
+        (preset === "custom" && !provider.baseUrl) ||
+        (preset !== "openrouter" && !provider.configured)
+      )
+        return;
+      setCatalog((current) => ({
+        ...current,
+        status: "loading",
+        error: undefined,
+      }));
+      void api<{ list: ProviderModelOption[] }>("/api/providers/models", {
+        method: "POST",
+        body: JSON.stringify({
+          type: provider.type,
+          preset,
+          baseUrl: effectiveBaseUrl || undefined,
+        }),
+      })
+        .then((result) => {
+          if (active) setCatalog({ status: "ready", list: result.list });
+        })
+        .catch((error) => {
+          if (active)
+            setCatalog({
+              status: "error",
+              list: [],
+              error: error instanceof Error ? error.message : String(error),
+            });
+        });
+    });
+    return () => {
+      active = false;
+    };
+  }, [
+    api,
+    effectiveBaseUrl,
+    preset,
+    provider.baseUrl,
+    provider.configured,
+    provider.type,
+  ]);
+
+  const title =
+    provider.type === "text"
+      ? "Scénario"
+      : provider.type === "image"
+        ? "Images"
+        : "Narration";
+  const modelLabel =
+    provider.type === "text"
+      ? "Modèle de génération de texte"
+      : provider.type === "image"
+        ? "Modèle de génération d’image"
+        : "Modèle de synthèse vocale";
+  const selectedModelExists = catalog.list.some(
+    (model) => model.id === provider.model,
+  );
+
+  return (
+    <div className="provider-row">
+      <div className="provider-row-heading">
+        <div>
+          <strong>{title}</strong>
+          <small>
+            {provider.type === "text"
+              ? "Écriture structurée du scénario"
+              : provider.type === "image"
+                ? "Couverture et illustrations"
+                : "MP3 et voix du compte"}
+          </small>
+        </div>
+        <label className="switch compact-switch">
+          <input
+            type="checkbox"
+            checked={provider.enabled}
+            onChange={(event) => onChange({ enabled: event.target.checked })}
+          />
+          <span /> Actif
+        </label>
+      </div>
+      <div className="form-grid provider-fields">
+        <Field label="Fournisseur">
+          <select
+            value={preset}
+            onChange={(event) => {
+              const nextPreset = event.target.value as ProviderPreset;
+              if (nextPreset === "custom") {
+                onChange({
+                  provider: "custom",
+                  baseUrl: "",
+                  model: "",
+                });
+                return;
+              }
+              const defaults = providerDefaults[nextPreset];
+              onChange({
+                provider: nextPreset,
+                baseUrl: defaults.baseUrl,
+                model: defaults.model ?? "",
+              });
+            }}
+          >
+            {providerChoices[provider.type].map((choice) => (
+              <option key={choice.id} value={choice.id}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {preset === "custom" && (
+          <Field label="Nom du fournisseur personnalisé">
+            <input
+              value={provider.provider === "custom" ? "" : provider.provider}
+              onChange={(event) =>
+                onChange({ provider: event.target.value || "custom" })
+              }
+              placeholder="Ex. : mon-api-compatible"
+            />
+          </Field>
+        )}
+        <Field label={modelLabel}>
+          {preset === "custom" ? (
+            <input
+              value={provider.model ?? ""}
+              onChange={(event) => onChange({ model: event.target.value })}
+              placeholder="Identifiant exact du modèle"
+            />
+          ) : (
+            <select
+              value={provider.model ?? ""}
+              disabled={catalog.status === "loading"}
+              onChange={(event) => onChange({ model: event.target.value })}
+            >
+              <option value="">
+                {catalog.status === "loading"
+                  ? "Chargement des modèles…"
+                  : "Choisir un modèle"}
+              </option>
+              {provider.model && !selectedModelExists && (
+                <option value={provider.model}>
+                  {provider.model} — configuration actuelle
+                </option>
+              )}
+              {catalog.list.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name === model.id
+                    ? model.id
+                    : `${model.name} — ${model.id}`}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
+        {preset === "custom" ? (
+          <Field label="URL API personnalisée">
+            <input
+              type="url"
+              value={provider.baseUrl ?? ""}
+              onChange={(event) => onChange({ baseUrl: event.target.value })}
+              placeholder="https://api.exemple.fr/v1"
+            />
+          </Field>
+        ) : (
+          <div className="provider-endpoint">
+            <small>URL utilisée</small>
+            <code>{effectiveBaseUrl}</code>
+          </div>
+        )}
+        <Field label="Clé API">
+          <input
+            type="password"
+            value={provider.apiKey ?? ""}
+            onChange={(event) => onChange({ apiKey: event.target.value })}
+            placeholder="Laisser vide pour conserver la clé enregistrée"
+          />
+        </Field>
+      </div>
+      <div className="provider-catalog-status">
+        <button
+          type="button"
+          className="ghost compact"
+          disabled={catalog.status === "loading"}
+          onClick={() => void requestCatalog(true)}
+        >
+          <RefreshCw />
+          {catalog.status === "loading"
+            ? "Chargement…"
+            : "Actualiser les modèles"}
+        </button>
+        {catalog.status === "ready" && (
+          <span>
+            {catalog.list.length} modèle{catalog.list.length > 1 ? "s" : ""}
+            compatible{catalog.list.length > 1 ? "s" : ""}
+          </span>
+        )}
+        {catalog.status === "error" && (
+          <span className="field-error">{catalog.error}</span>
+        )}
+      </div>
+      {provider.type === "tts" && preset === "elevenlabs" && (
+        <p className="provider-note">
+          Seuls les modèles ElevenLabs capables de synthèse vocale sont listés.
+          Les voix réellement disponibles dans votre compte apparaîtront dans
+          l’assistant de création.
+        </p>
+      )}
     </div>
   );
 }

@@ -49,7 +49,10 @@ export async function GET() {
       ...config,
       storeApiKeyHash: undefined,
       storeApiKeyEncrypted: undefined,
-      providers,
+      providers: providers.map((provider) => ({
+        ...provider,
+        configured: true,
+      })),
     });
   } catch (error) {
     return apiErrorResponse(error);
