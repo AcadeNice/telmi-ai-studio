@@ -14,10 +14,13 @@ export async function POST(request: Request) {
     await requireMutationSession(request);
     const input = schema.parse(await readJson(request));
     if (input.type === "tts") {
-      const response = await fetch(
-        `${input.baseUrl ?? "https://api.elevenlabs.io/v1"}/voices`,
-        { headers: { "xi-api-key": input.apiKey } },
+      const baseUrl = (input.baseUrl ?? "https://api.elevenlabs.io/v1").replace(
+        /\/+$/,
+        "",
       );
+      const response = await fetch(`${baseUrl}/voices`, {
+        headers: { "xi-api-key": input.apiKey },
+      });
       return Response.json({ ok: response.ok, status: response.status });
     }
     const client = new OpenAI({ apiKey: input.apiKey, baseURL: input.baseUrl });

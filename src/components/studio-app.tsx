@@ -63,6 +63,13 @@ type InternalNotification = {
   message: string;
   readAt?: string | null;
 };
+type ElevenLabsVoice = {
+  voice_id: string;
+  name: string;
+  category?: string;
+  preview_url?: string;
+  labels?: Record<string, string>;
+};
 type ApiFailure = {
   message?: string;
   fieldErrors?: Record<string, string[]>;
@@ -684,6 +691,27 @@ function CreationWizard({
     existingStory?.description ?? "",
   );
   const [busy, setBusy] = useState(false);
+  const [voices, setVoices] = useState<ElevenLabsVoice[]>([]);
+  const [voicesStatus, setVoicesStatus] = useState<
+    "loading" | "ready" | "error"
+  >("loading");
+  const [voicesError, setVoicesError] = useState("");
+  const loadVoices = useCallback(async () => {
+    setVoicesStatus("loading");
+    setVoicesError("");
+    try {
+      const result = await api<{ list: ElevenLabsVoice[] }>(
+        "/api/providers/voices",
+      );
+      setVoices(result.list);
+      setVoicesStatus("ready");
+    } catch (error) {
+      setVoicesStatus("error");
+      setVoicesError(
+        error instanceof Error ? error.message : "Voix indisponibles.",
+      );
+    }
+  }, [api]);
   useEffect(() => {
     if (existingStory) return;
     void api<{ childName: string }>("/api/settings")
@@ -697,6 +725,9 @@ function CreationWizard({
       })
       .catch(() => undefined);
   }, [api, existingStory]);
+  useEffect(() => {
+    queueMicrotask(() => void loadVoices());
+  }, [loadVoices]);
   const estimate = useMemo(
     () => ({
       scenes: 2 + params.decisionCount * (params.choicesPerDecision + 1),
@@ -920,8 +951,8 @@ function CreationWizard({
                 }
               />
             </div>
-            <Field label="Identifiant de la voix ElevenLabs">
-              <input
+            <Field label="Voix ElevenLabs">
+              <select
                 value={params.defaultVoiceId ?? ""}
                 onChange={(e) =>
                   setParams({
@@ -929,8 +960,62 @@ function CreationWizard({
                     defaultVoiceId: e.target.value || undefined,
                   })
                 }
-                placeholder="À sélectionner après configuration"
-              />
+                disabled={voicesStatus === "loading"}
+              >
+                <option value="">
+                  {voicesStatus === "loading"
+                    ? "Chargement des voix…"
+                    : voices.length
+                      ? "Choisir une voix"
+                      : "Aucune voix disponible"}
+                </option>
+                {params.defaultVoiceId &&
+                  !voices.some(
+                    (voice) => voice.voice_id === params.defaultVoiceId,
+                  ) && (
+                    <option value={params.defaultVoiceId}>
+                      Voix enregistrée ({params.defaultVoiceId})
+                    </option>
+                  )}
+                {voices.map((voice) => (
+                  <option key={voice.voice_id} value={voice.voice_id}>
+                    {formatVoiceLabel(voice)}
+                  </option>
+                ))}
+              </select>
+              <div className="voice-selector-meta">
+                {voicesStatus === "ready" && voices.length > 0 && (
+                  <span>
+                    {voices.length} voix disponible
+                    {voices.length > 1 ? "s" : ""}, y compris vos voix clonées.
+                  </span>
+                )}
+                {voicesStatus === "error" && (
+                  <span className="field-error">{voicesError}</span>
+                )}
+                <button
+                  type="button"
+                  className="ghost compact"
+                  disabled={voicesStatus === "loading"}
+                  onClick={() => void loadVoices()}
+                >
+                  <RefreshCw /> Actualiser les voix
+                </button>
+              </div>
+              {params.defaultVoiceId &&
+                voices.find((voice) => voice.voice_id === params.defaultVoiceId)
+                  ?.preview_url && (
+                  <audio
+                    className="voice-preview"
+                    controls
+                    preload="none"
+                    src={
+                      voices.find(
+                        (voice) => voice.voice_id === params.defaultVoiceId,
+                      )!.preview_url
+                    }
+                  />
+                )}
             </Field>
           </>
         )}
@@ -1054,6 +1139,23 @@ function ToggleCard({
     </button>
   );
 }
+
+function formatVoiceLabel(voice: ElevenLabsVoice) {
+  const categories: Record<string, string> = {
+    cloned: "clonée",
+    generated: "générée",
+    premade: "prédéfinie",
+    professional: "professionnelle",
+  };
+  const details = [
+    voice.category ? (categories[voice.category] ?? voice.category) : null,
+    voice.labels?.language,
+    voice.labels?.accent,
+    voice.labels?.gender,
+  ].filter((value, index, list) => value && list.indexOf(value) === index);
+  return details.length ? `${voice.name} — ${details.join(", ")}` : voice.name;
+}
+
 function Field({
   label,
   children,

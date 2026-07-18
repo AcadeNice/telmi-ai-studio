@@ -91,3 +91,43 @@ test("un brouillon peut être rouvert et modifié dans l’assistant", async ({
     page.getByRole("heading", { name: "L’aventure modifiée" }),
   ).toBeVisible();
 });
+
+test("les voix ElevenLabs sont proposées dans une liste déroulante", async ({
+  page,
+}) => {
+  await page.route("**/api/providers/voices", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        list: [
+          {
+            voice_id: "voice-clone",
+            name: "Voix de Maman",
+            category: "cloned",
+            preview_url: "https://example.com/preview.mp3",
+            labels: { language: "fr", gender: "female" },
+          },
+          {
+            voice_id: "voice-premade",
+            name: "Alice",
+            category: "premade",
+            labels: { language: "fr" },
+          },
+        ],
+      }),
+    });
+  });
+  await authenticate(page);
+  await page
+    .getByRole("button", { name: "Créer une histoire" })
+    .first()
+    .click();
+  for (let step = 0; step < 3; step += 1)
+    await page.getByRole("button", { name: /Continuer/ }).click();
+
+  const select = page.getByLabel("Voix ElevenLabs");
+  await expect(select).toBeEnabled();
+  await expect(select.locator("option")).toHaveCount(3);
+  await select.selectOption("voice-clone");
+  await expect(page.locator("audio.voice-preview")).toBeVisible();
+});

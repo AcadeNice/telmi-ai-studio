@@ -683,6 +683,32 @@ button {
   color: #7c5a18;
   font-size: 13px;
 }
+.voice-selector-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.voice-selector-meta .compact {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+.voice-selector-meta svg {
+  width: 14px;
+  height: 14px;
+}
+.field-error {
+  color: var(--red);
+}
+.voice-preview {
+  width: 100%;
+  height: 38px;
+  margin-top: 10px;
+}
 .library-tools {
   display: flex;
   justify-content: space-between;
@@ -1089,6 +1115,10 @@ button {
   }
   .choice-cards {
     grid-template-columns: 1fr;
+  }
+  .voice-selector-meta {
+    align-items: stretch;
+    flex-direction: column;
   }
   .story-grid {
     grid-template-columns: 1fr 1fr;
