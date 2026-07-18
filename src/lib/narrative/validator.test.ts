@@ -4,7 +4,10 @@ import {
   narrativeStorySchema,
   type NarrativeStory,
 } from "./schema";
-import { validateNarrativeGraph } from "./validator";
+import {
+  normalizeNarrativeSceneTypes,
+  validateNarrativeGraph,
+} from "./validator";
 
 const validStory: NarrativeStory = {
   schemaVersion: "1.0",
@@ -123,5 +126,31 @@ describe("narrative graph", () => {
         (issue) => issue.code === "NARRATIVE_MULTIPLE_OUTPUTS",
       ),
     ).toBe(true);
+  });
+
+  it("normalizes scene types from their outgoing transitions", () => {
+    const story = structuredClone(validStory);
+    story.scenes[0]!.type = "narrative";
+    story.scenes[1]!.type = "choice";
+    story.scenes[2]!.type = "narrative";
+
+    const normalized = normalizeNarrativeSceneTypes(story);
+
+    expect(normalized.scenes.map((scene) => scene.type)).toEqual([
+      "choice",
+      "ending",
+      "ending",
+    ]);
+    expect(validateNarrativeGraph(normalized).valid).toBe(true);
+  });
+
+  it("does not mutate the provider response while normalizing", () => {
+    const story = structuredClone(validStory);
+    story.scenes[0]!.type = "narrative";
+
+    const normalized = normalizeNarrativeSceneTypes(story);
+
+    expect(story.scenes[0]!.type).toBe("narrative");
+    expect(normalized.scenes[0]!.type).toBe("choice");
   });
 });

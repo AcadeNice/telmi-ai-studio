@@ -61,7 +61,10 @@ type InternalNotification = {
   message: string;
   readAt?: string | null;
 };
-type ApiFailure = { message?: string };
+type ApiFailure = {
+  message?: string;
+  fieldErrors?: Record<string, string[]>;
+};
 
 const initialParameters: CreationParameters = {
   childName: "Mila",
@@ -84,7 +87,15 @@ async function parseResponse<T>(response: Response): Promise<T> {
     const error = (await response
       .json()
       .catch(() => ({ message: `HTTP ${response.status}` }))) as ApiFailure;
-    throw new Error(error.message ?? `HTTP ${response.status}`);
+    const details = Object.values(error.fieldErrors ?? {})
+      .flat()
+      .slice(0, 3)
+      .join(" ");
+    throw new Error(
+      [error.message ?? `HTTP ${response.status}`, details]
+        .filter(Boolean)
+        .join(" "),
+    );
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;

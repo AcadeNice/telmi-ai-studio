@@ -19,6 +19,39 @@ export type GraphValidation = {
   };
 };
 
+/**
+ * Align scene types with their actual outgoing edges.
+ *
+ * Structured-output providers reliably produce the requested JSON shape, but
+ * can still label a terminal scene as `narrative` or a branching scene as
+ * `narrative`. Those are unambiguous mechanical mistakes and do not require a
+ * second paid provider call to fix.
+ */
+export function normalizeNarrativeSceneTypes(
+  story: NarrativeStory,
+): NarrativeStory {
+  const outgoingCounts = new Map<string, number>();
+  for (const choice of story.choices)
+    outgoingCounts.set(
+      choice.sourceSceneId,
+      (outgoingCounts.get(choice.sourceSceneId) ?? 0) + 1,
+    );
+
+  return {
+    ...story,
+    scenes: story.scenes.map((scene) => {
+      const outgoingCount = outgoingCounts.get(scene.id) ?? 0;
+      const type =
+        outgoingCount === 0
+          ? "ending"
+          : outgoingCount === 1
+            ? "narrative"
+            : "choice";
+      return scene.type === type ? scene : { ...scene, type };
+    }),
+  };
+}
+
 export function validateNarrativeGraph(
   story: NarrativeStory,
   maxDepth = 32,

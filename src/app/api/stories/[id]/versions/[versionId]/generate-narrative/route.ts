@@ -8,6 +8,7 @@ import { creationParametersSchema } from "@/lib/narrative/schema";
 import { validateNarrativeGraph } from "@/lib/narrative/validator";
 import { generateNarrative } from "@/server/providers/text";
 import { saveNarrative } from "@/server/stories/service";
+import { writeAppLog } from "@/server/logging/app-log";
 
 export async function POST(
   request: Request,
@@ -34,13 +35,20 @@ export async function POST(
     );
     const result = await generateNarrative(parameters);
     const validation = validateNarrativeGraph(result.narrative);
-    if (!validation.valid)
+    if (!validation.valid) {
+      await writeAppLog("warning", "Graphe IA invalide après réparation", {
+        issueCodes: validation.issues
+          .filter((issue) => issue.severity === "error")
+          .map((issue) => issue.code),
+        metrics: validation.metrics,
+      });
       throw new ApiError(
         422,
         "INVALID_AI_GRAPH",
         "Le fournisseur a produit un graphe invalide.",
         { graph: validation.issues.map((item) => item.message) },
       );
+    }
     saveNarrative(versionId, result.narrative, result.raw);
     const totalTokens = result.usage?.total_tokens ?? 0;
     const estimatedCostCents = Math.max(1, Math.ceil(totalTokens / 1000));
