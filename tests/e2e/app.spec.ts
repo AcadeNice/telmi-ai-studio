@@ -105,13 +105,19 @@ test("les voix ElevenLabs sont proposées dans une liste déroulante", async ({
             name: "Voix de Maman",
             category: "cloned",
             preview_url: "https://example.com/preview.mp3",
-            labels: { language: "fr", gender: "female" },
+            labels: { language: "en", gender: "female" },
           },
           {
             voice_id: "voice-premade",
             name: "Alice",
             category: "premade",
             labels: { language: "fr" },
+          },
+          {
+            voice_id: "voice-english",
+            name: "George",
+            category: "premade",
+            labels: { language: "en" },
           },
         ],
       }),
@@ -125,9 +131,21 @@ test("les voix ElevenLabs sont proposées dans une liste déroulante", async ({
   for (let step = 0; step < 3; step += 1)
     await page.getByRole("button", { name: /Continuer/ }).click();
 
-  const select = page.getByLabel("Voix ElevenLabs");
-  await expect(select).toBeEnabled();
-  await expect(select.locator("option")).toHaveCount(3);
-  await select.selectOption("voice-clone");
+  const languageSelect = page.getByLabel("Langue des voix");
+  const voiceSelect = page.getByLabel("Voix ElevenLabs");
+  await expect(languageSelect).toHaveValue("fr");
+  await expect(voiceSelect).toBeEnabled();
+  await expect(voiceSelect.locator("option")).toHaveCount(3);
+  await expect(
+    voiceSelect.locator('option[value="voice-english"]'),
+  ).toHaveCount(0);
+  await languageSelect.selectOption("en");
+  await expect(
+    voiceSelect.locator('option[value="voice-premade"]'),
+  ).toHaveCount(0);
+  await expect(
+    voiceSelect.locator('option[value="voice-english"]'),
+  ).toHaveCount(1);
+  await voiceSelect.selectOption("voice-clone");
   await expect(page.locator("audio.voice-preview")).toBeVisible();
 });

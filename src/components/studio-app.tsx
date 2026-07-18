@@ -696,6 +696,7 @@ function CreationWizard({
     "loading" | "ready" | "error"
   >("loading");
   const [voicesError, setVoicesError] = useState("");
+  const [voiceLanguage, setVoiceLanguage] = useState("fr");
   const loadVoices = useCallback(async () => {
     setVoicesStatus("loading");
     setVoicesError("");
@@ -737,6 +738,39 @@ function CreationWizard({
           : params.decisionCount * params.choicesPerDecision + 1,
     }),
     [params],
+  );
+  const availableVoiceLanguages = useMemo(() => {
+    const languages = new Set(
+      voices
+        .map((voice) => normalizeVoiceLanguage(voice.labels?.language))
+        .filter((language): language is string => Boolean(language)),
+    );
+    languages.add("fr");
+    return [...languages].sort((left, right) => {
+      if (left === "fr") return -1;
+      if (right === "fr") return 1;
+      return formatVoiceLanguage(left).localeCompare(
+        formatVoiceLanguage(right),
+        "fr",
+      );
+    });
+  }, [voices]);
+  const filteredVoices = useMemo(
+    () =>
+      voices.filter(
+        (voice) =>
+          isCustomVoice(voice) ||
+          voiceLanguage === "all" ||
+          normalizeVoiceLanguage(voice.labels?.language) === voiceLanguage,
+      ),
+    [voiceLanguage, voices],
+  );
+  const customVoices = filteredVoices.filter(isCustomVoice);
+  const standardVoices = filteredVoices.filter(
+    (voice) => !isCustomVoice(voice),
+  );
+  const selectedVoice = voices.find(
+    (voice) => voice.voice_id === params.defaultVoiceId,
   );
   return (
     <div className="wizard page-card">
@@ -951,72 +985,118 @@ function CreationWizard({
                 }
               />
             </div>
-            <Field label="Voix ElevenLabs">
-              <select
-                value={params.defaultVoiceId ?? ""}
-                onChange={(e) =>
-                  setParams({
-                    ...params,
-                    defaultVoiceId: e.target.value || undefined,
-                  })
-                }
-                disabled={voicesStatus === "loading"}
-              >
-                <option value="">
-                  {voicesStatus === "loading"
-                    ? "Chargement des voix…"
-                    : voices.length
-                      ? "Choisir une voix"
-                      : "Aucune voix disponible"}
-                </option>
-                {params.defaultVoiceId &&
-                  !voices.some(
-                    (voice) => voice.voice_id === params.defaultVoiceId,
-                  ) && (
+            <div className="form-grid voice-fields">
+              <Field label="Langue des voix">
+                <select
+                  value={voiceLanguage}
+                  disabled={voicesStatus === "loading"}
+                  onChange={(event) => {
+                    const language = event.target.value;
+                    setVoiceLanguage(language);
+                    if (
+                      selectedVoice &&
+                      !isCustomVoice(selectedVoice) &&
+                      language !== "all" &&
+                      normalizeVoiceLanguage(selectedVoice.labels?.language) !==
+                        language
+                    )
+                      setParams({ ...params, defaultVoiceId: undefined });
+                  }}
+                >
+                  {availableVoiceLanguages.map((language) => (
+                    <option key={language} value={language}>
+                      {formatVoiceLanguage(language)}
+                    </option>
+                  ))}
+                  <option value="all">Toutes les langues</option>
+                </select>
+              </Field>
+              <Field label="Voix ElevenLabs">
+                <select
+                  value={params.defaultVoiceId ?? ""}
+                  onChange={(e) =>
+                    setParams({
+                      ...params,
+                      defaultVoiceId: e.target.value || undefined,
+                    })
+                  }
+                  disabled={voicesStatus === "loading"}
+                >
+                  <option value="">
+                    {voicesStatus === "loading"
+                      ? "Chargement des voix…"
+                      : filteredVoices.length
+                        ? "Choisir une voix"
+                        : "Aucune voix disponible"}
+                  </option>
+                  {params.defaultVoiceId && !selectedVoice && (
                     <option value={params.defaultVoiceId}>
                       Voix enregistrée ({params.defaultVoiceId})
                     </option>
                   )}
-                {voices.map((voice) => (
-                  <option key={voice.voice_id} value={voice.voice_id}>
-                    {formatVoiceLabel(voice)}
-                  </option>
-                ))}
-              </select>
-              <div className="voice-selector-meta">
-                {voicesStatus === "ready" && voices.length > 0 && (
-                  <span>
-                    {voices.length} voix disponible
-                    {voices.length > 1 ? "s" : ""}, y compris vos voix clonées.
-                  </span>
-                )}
-                {voicesStatus === "error" && (
-                  <span className="field-error">{voicesError}</span>
-                )}
-                <button
-                  type="button"
-                  className="ghost compact"
-                  disabled={voicesStatus === "loading"}
-                  onClick={() => void loadVoices()}
-                >
-                  <RefreshCw /> Actualiser les voix
-                </button>
-              </div>
-              {params.defaultVoiceId &&
-                voices.find((voice) => voice.voice_id === params.defaultVoiceId)
-                  ?.preview_url && (
+                  {selectedVoice &&
+                    !filteredVoices.some(
+                      (voice) => voice.voice_id === selectedVoice.voice_id,
+                    ) && (
+                      <option value={selectedVoice.voice_id}>
+                        {formatVoiceLabel(selectedVoice)} — sélectionnée
+                      </option>
+                    )}
+                  {customVoices.length > 0 && (
+                    <optgroup label="Voix personnalisées">
+                      {customVoices.map((voice) => (
+                        <option key={voice.voice_id} value={voice.voice_id}>
+                          {formatVoiceLabel(voice)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {standardVoices.length > 0 && (
+                    <optgroup
+                      label={
+                        voiceLanguage === "all"
+                          ? "Voix standards"
+                          : `Voix en ${formatVoiceLanguage(voiceLanguage).toLowerCase()}`
+                      }
+                    >
+                      {standardVoices.map((voice) => (
+                        <option key={voice.voice_id} value={voice.voice_id}>
+                          {formatVoiceLabel(voice)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+                <div className="voice-selector-meta">
+                  {voicesStatus === "ready" && voices.length > 0 && (
+                    <span>
+                      {filteredVoices.length} voix affichée
+                      {filteredVoices.length > 1 ? "s" : ""} sur {voices.length}
+                      . Les voix personnalisées restent toujours visibles.
+                    </span>
+                  )}
+                  {voicesStatus === "error" && (
+                    <span className="field-error">{voicesError}</span>
+                  )}
+                  <button
+                    type="button"
+                    className="ghost compact"
+                    disabled={voicesStatus === "loading"}
+                    onClick={() => void loadVoices()}
+                  >
+                    <RefreshCw /> Actualiser les voix
+                  </button>
+                </div>
+                {selectedVoice?.preview_url && (
                   <audio
                     className="voice-preview"
                     controls
                     preload="none"
-                    src={
-                      voices.find(
-                        (voice) => voice.voice_id === params.defaultVoiceId,
-                      )!.preview_url
-                    }
+                    src={selectedVoice.preview_url}
                   />
                 )}
-            </Field>
+              </Field>
+            </div>
           </>
         )}
         {step === 5 && (
@@ -1138,6 +1218,32 @@ function ToggleCard({
       <small>{subtitle}</small>
     </button>
   );
+}
+
+function isCustomVoice(voice: ElevenLabsVoice) {
+  return voice.category !== "premade";
+}
+
+function normalizeVoiceLanguage(language?: string) {
+  if (!language) return null;
+  return language.trim().toLowerCase().split(/[-_]/)[0] || null;
+}
+
+function formatVoiceLanguage(language: string) {
+  const commonLanguages: Record<string, string> = {
+    fr: "Français",
+    en: "Anglais",
+    es: "Espagnol",
+    de: "Allemand",
+    it: "Italien",
+    pt: "Portugais",
+    nl: "Néerlandais",
+    pl: "Polonais",
+    ja: "Japonais",
+    ko: "Coréen",
+    zh: "Chinois",
+  };
+  return commonLanguages[language] ?? language.toUpperCase();
 }
 
 function formatVoiceLabel(voice: ElevenLabsVoice) {
