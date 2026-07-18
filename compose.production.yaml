@@ -1,0 +1,71 @@
+name: telmi-ai-studio
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telmi-ai-studio
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      DATABASE_URL: /data/telmi.db
+      DATA_DIR: /data
+      NEXT_PUBLIC_APP_URL: https://${TELMI_DOMAIN:-telmi.a3n.fr}
+      COOKIE_SECURE: "true"
+    volumes:
+      - telmi_data:/data
+    networks:
+      - admin_proxy
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 1g
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=admin_proxy
+      - traefik.http.middlewares.telmi-security.headers.browserXssFilter=true
+      - traefik.http.middlewares.telmi-security.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.telmi-security.headers.forceSTSHeader=true
+      - traefik.http.middlewares.telmi-security.headers.stsSeconds=31536000
+      - traefik.http.middlewares.telmi-security.headers.referrerPolicy=strict-origin-when-cross-origin
+      - traefik.http.middlewares.telmi-security.headers.customResponseHeaders.X-Powered-By=
+      - traefik.http.routers.telmi.entrypoints=web
+      - traefik.http.routers.telmi.rule=Host(`${TELMI_DOMAIN:-telmi.a3n.fr}`)
+      - traefik.http.routers.telmi.middlewares=redirect-https
+      - traefik.http.routers.telmi-secure.entrypoints=websecure
+      - traefik.http.routers.telmi-secure.rule=Host(`${TELMI_DOMAIN:-telmi.a3n.fr}`)
+      - traefik.http.routers.telmi-secure.tls=true
+      - traefik.http.routers.telmi-secure.tls.certresolver=letsencrypt
+      - traefik.http.routers.telmi-secure.service=telmi
+      - traefik.http.routers.telmi-secure.middlewares=telmi-security
+      - traefik.http.services.telmi.loadbalancer.server.port=3000
+
+networks:
+  admin_proxy:
+    external: true
+
+volumes:
+  telmi_data:

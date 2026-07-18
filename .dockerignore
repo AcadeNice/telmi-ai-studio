@@ -1,0 +1,14 @@
+.git
+.next
+node_modules
+store/library
+data
+playwright-report
+coverage
+_byan
+_byan-output
+test-results
+playwright-report
+tsconfig.tsbuildinfo
+.env
+.env.production

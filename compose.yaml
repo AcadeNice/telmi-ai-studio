@@ -1,0 +1,70 @@
+services:
+  telmi-ai-studio:
+    build: .
+    container_name: telmi-ai-studio
+    restart: unless-stopped
+    ports:
+      - "${TELMI_BIND_ADDRESS:-127.0.0.1}:3000:3000"
+    environment:
+      DATABASE_URL: "/data/telmi.db"
+      DATA_DIR: "/data"
+      APP_ENCRYPTION_KEY: "${APP_ENCRYPTION_KEY}"
+      N8N_SHARED_SECRET: "${N8N_SHARED_SECRET}"
+      NEXT_PUBLIC_APP_URL: "${NEXT_PUBLIC_APP_URL:-http://localhost:3000}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+    volumes:
+      - telmi-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 1g
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)})",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  telmi-store:
+    profiles: ["legacy-store"]
+    image: jordanderoubaix/telmi-store:latest
+    container_name: telmi-private-store
+    restart: unless-stopped
+    ports:
+      - "192.168.1.139:8888:8888"
+    environment:
+      TARGET_URL: "http://192.168.1.139:8888"
+      REQUEST_SCHEME: "http"
+      API_KEY: "${TELMI_STORE_API_KEY}"
+      BANNER_IMAGE: "https://raw.githubusercontent.com/jordanderoubaix/Telmi-store/refs/heads/main/img/banner-custom-telmi-store.png"
+      BANNER_LINK: "https://telmi.fr"
+      BANNER_BACKGROUND: "#2e144b"
+      LOG_LEVEL: "INFO"
+    volumes:
+      - ./store/library:/mnt/nfs/telmiLibrary
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  telmi-data:
