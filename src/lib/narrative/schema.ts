@@ -54,8 +54,81 @@ export type NarrativeStory = z.infer<typeof narrativeStorySchema>;
 export type NarrativeScene = z.infer<typeof narrativeSceneSchema>;
 export type NarrativeChoice = z.infer<typeof narrativeChoiceSchema>;
 
+// Provider-facing schemas must remain deliberately compact. Gemini rejects the
+// full Zod-derived schema because its many length, range and pattern constraints
+// create too many internal grammar states. The response is still parsed with
+// narrativeStorySchema immediately afterwards, so all strict business limits
+// continue to apply inside the application.
 export const narrativeJsonSchema = {
   name: "telmi_narrative_story",
-  strict: true,
-  schema: z.toJSONSchema(narrativeStorySchema),
+  strict: false,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      schemaVersion: { type: "string", enum: ["1.0"] },
+      title: { type: "string" },
+      description: { type: "string" },
+      age: { type: "integer" },
+      targetDurationSeconds: { type: "integer" },
+      startSceneId: { type: "string" },
+      moral: { type: "string" },
+      scenes: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            id: { type: "string" },
+            type: { type: "string", enum: ["narrative", "choice", "ending"] },
+            title: { type: "string" },
+            text: { type: "string" },
+            imagePrompt: { type: "string" },
+            voiceId: { type: "string" },
+            position: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                x: { type: "number" },
+                y: { type: "number" },
+              },
+              required: ["x", "y"],
+            },
+          },
+          required: ["id", "type", "title", "text"],
+        },
+      },
+      choices: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            id: { type: "string" },
+            sourceSceneId: { type: "string" },
+            label: { type: "string" },
+            targetSceneId: { type: "string" },
+            order: { type: "integer" },
+          },
+          required: [
+            "id",
+            "sourceSceneId",
+            "label",
+            "targetSceneId",
+            "order",
+          ],
+        },
+      },
+    },
+    required: [
+      "schemaVersion",
+      "title",
+      "description",
+      "age",
+      "targetDurationSeconds",
+      "startSceneId",
+      "scenes",
+      "choices",
+    ],
+  },
 };

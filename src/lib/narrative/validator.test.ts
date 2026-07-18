@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { narrativeStorySchema, type NarrativeStory } from "./schema";
+import {
+  narrativeJsonSchema,
+  narrativeStorySchema,
+  type NarrativeStory,
+} from "./schema";
 import { validateNarrativeGraph } from "./validator";
 
 const validStory: NarrativeStory = {
@@ -48,6 +52,22 @@ const validStory: NarrativeStory = {
 };
 
 describe("narrative graph", () => {
+  it("keeps the provider schema compact for Gemini", () => {
+    const encoded = JSON.stringify(narrativeJsonSchema.schema);
+    expect(narrativeJsonSchema.strict).toBe(false);
+    for (const unsupportedConstraint of [
+      "$schema",
+      "pattern",
+      "minLength",
+      "maxLength",
+      "minimum",
+      "maximum",
+      "minItems",
+      "maxItems",
+    ])
+      expect(encoded).not.toContain(`"${unsupportedConstraint}"`);
+  });
+
   it("accepts a complete branching story", () => {
     expect(narrativeStorySchema.parse(validStory)).toEqual(validStory);
     expect(validateNarrativeGraph(validStory).valid).toBe(true);
