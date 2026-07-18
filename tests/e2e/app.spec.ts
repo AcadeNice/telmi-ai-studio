@@ -63,3 +63,31 @@ test("navigation vers la bibliothèque et les paramètres", async ({ page }) => 
     page.getByRole("heading", { name: "Exploitation" }),
   ).toBeVisible();
 });
+
+test("un brouillon peut être rouvert et modifié dans l’assistant", async ({
+  page,
+}) => {
+  await authenticate(page);
+  await page
+    .getByRole("button", { name: "Créer une histoire" })
+    .first()
+    .click();
+  for (let step = 0; step < 4; step += 1)
+    await page.getByRole("button", { name: /Continuer/ }).click();
+  await page.getByLabel("Description facultative").fill("Brouillon modifiable");
+  await page.getByRole("button", { name: "Créer le brouillon" }).click();
+
+  await expect(
+    page.getByRole("button", { name: "Modifier la création" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Modifier la création" }).click();
+  await expect(page.getByText("Modification du brouillon")).toBeVisible();
+  await page.getByRole("button", { name: "2 L’aventure" }).click();
+  await page.getByLabel("Titre de travail").fill("L’aventure modifiée");
+  await page.getByRole("button", { name: "5 Vérification" }).click();
+  await page.getByRole("button", { name: "Enregistrer le brouillon" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "L’aventure modifiée" }),
+  ).toBeVisible();
+});

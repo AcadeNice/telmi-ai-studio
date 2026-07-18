@@ -46,10 +46,7 @@ export function createStory(input: {
         updatedAt: now,
       })
       .run();
-    const estimatedCostCents =
-      5 +
-      input.parameters.decisionCount * input.parameters.choicesPerDecision * 5 +
-      input.parameters.targetDurationMinutes * 2;
+    const estimatedCostCents = estimateStoryCost(input.parameters);
     tx.insert(storyVersions)
       .values({
         id: versionId,
@@ -67,6 +64,58 @@ export function createStory(input: {
       .where(eq(stories.id, storyId))
       .run();
   });
+  return getStory(storyId);
+}
+
+function estimateStoryCost(parameters: CreationParameters) {
+  return (
+    5 +
+    parameters.decisionCount * parameters.choicesPerDecision * 5 +
+    parameters.targetDurationMinutes * 2
+  );
+}
+
+export function updateDraftCreation(
+  storyId: string,
+  versionId: string,
+  input: {
+    title: string;
+    description: string;
+    parameters: CreationParameters;
+  },
+) {
+  ensureDatabase();
+  const version = db
+    .select()
+    .from(storyVersions)
+    .where(
+      and(eq(storyVersions.id, versionId), eq(storyVersions.storyId, storyId)),
+    )
+    .get();
+  if (!version) return null;
+  if (version.status !== "draft") return "immutable" as const;
+
+  const now = new Date();
+  db.transaction((tx) => {
+    tx.update(stories)
+      .set({
+        title: input.title,
+        description: input.description,
+        age: input.parameters.age,
+        updatedAt: now,
+      })
+      .where(eq(stories.id, storyId))
+      .run();
+    tx.update(storyVersions)
+      .set({
+        parametersJson: JSON.stringify(input.parameters),
+        estimatedCostCents: estimateStoryCost(input.parameters),
+        updatedAt: now,
+      })
+      .where(eq(storyVersions.id, versionId))
+      .run();
+  });
+
   return getStory(storyId);
 }
 

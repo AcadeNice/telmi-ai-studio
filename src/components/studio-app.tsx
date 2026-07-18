@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   LogOut,
   Plus,
+  PencilLine,
   RefreshCw,
   Settings,
   Sparkles,
@@ -35,6 +36,7 @@ type StoryVersion = {
   id: string;
   version: number;
   status: string;
+  parametersJson: string;
   estimatedCostCents: number;
   actualCostCents: number;
   packPath?: string | null;
@@ -110,6 +112,7 @@ export function StudioApp() {
   const [stories, setStories] = useState<Story[]>([]);
   const [deleted, setDeleted] = useState<Story[]>([]);
   const [selected, setSelected] = useState<Story | null>(null);
+  const [editingStory, setEditingStory] = useState<Story | null>(null);
   const [notice, setNotice] = useState<{
     tone: "ok" | "error" | "info";
     text: string;
@@ -190,11 +193,13 @@ export function StudioApp() {
 
   const openStory = async (story: Story) => {
     const detail = await api<Story>(`/api/stories/${story.id}`);
+    setEditingStory(null);
     setSelected(detail);
     setScreen("story");
   };
   const navigate = (next: Screen) => {
     setSelected(null);
+    setEditingStory(null);
     setScreen(next);
     if (["dashboard", "library", "trash"].includes(next)) void refresh();
   };
@@ -259,7 +264,11 @@ export function StudioApp() {
         <header className="topbar">
           <div>
             <span className="eyebrow">Espace parent</span>
-            <strong>{screenTitle(screen)}</strong>
+            <strong>
+              {screen === "create" && editingStory
+                ? "Modifier le brouillon"
+                : screenTitle(screen)}
+            </strong>
           </div>
           <button
             className="icon-button"
@@ -295,17 +304,25 @@ export function StudioApp() {
         {screen === "dashboard" && (
           <Dashboard
             stories={stories}
-            onCreate={() => setScreen("create")}
+            onCreate={() => navigate("create")}
             onOpen={openStory}
           />
         )}
         {screen === "create" && (
           <CreationWizard
+            key={editingStory?.id ?? "new-story"}
             api={api}
-            onCreated={(story) => {
+            existingStory={editingStory}
+            onCancel={() => {
+              if (editingStory) void openStory(editingStory);
+              else navigate("dashboard");
+            }}
+            onSaved={(story) => {
               setNotice({
                 tone: "ok",
-                text: "Brouillon créé. Vous pouvez maintenant générer le scénario.",
+                text: editingStory
+                  ? "Brouillon modifié. Le scénario déjà généré, s’il existe, a été conservé."
+                  : "Brouillon créé. Vous pouvez maintenant générer le scénario.",
               });
               void openStory(story);
             }}
@@ -342,6 +359,10 @@ export function StudioApp() {
             api={api}
             onRefresh={() => openStory(selected)}
             onNotice={setNotice}
+            onEditCreation={() => {
+              setEditingStory(selected);
+              setScreen("create");
+            }}
           />
         )}
       </main>
@@ -633,17 +654,38 @@ function Empty({ onCreate }: { onCreate: () => void }) {
 
 function CreationWizard({
   api,
-  onCreated,
+  existingStory,
+  onCancel,
+  onSaved,
 }: {
   api: <T>(url: string, init?: RequestInit) => Promise<T>;
-  onCreated: (story: Story) => void;
+  existingStory: Story | null;
+  onCancel: () => void;
+  onSaved: (story: Story) => void;
 }) {
+  const existingVersion = existingStory?.versions?.[0];
+  const savedParameters = (() => {
+    if (!existingVersion?.parametersJson) return null;
+    try {
+      return JSON.parse(existingVersion.parametersJson) as CreationParameters;
+    } catch {
+      return null;
+    }
+  })();
   const [step, setStep] = useState(1);
-  const [params, setParams] = useState(initialParameters);
-  const [title, setTitle] = useState("L’aventure de Mila");
-  const [description, setDescription] = useState("");
+  const [params, setParams] = useState<CreationParameters>(() => ({
+    ...initialParameters,
+    ...(savedParameters ?? {}),
+  }));
+  const [title, setTitle] = useState(
+    existingStory?.title ?? "L’aventure de Mila",
+  );
+  const [description, setDescription] = useState(
+    existingStory?.description ?? "",
+  );
   const [busy, setBusy] = useState(false);
   useEffect(() => {
+    if (existingStory) return;
     void api<{ childName: string }>("/api/settings")
       .then((settings) => {
         setParams((current) => ({ ...current, childName: settings.childName }));
@@ -654,7 +696,7 @@ function CreationWizard({
         );
       })
       .catch(() => undefined);
-  }, [api]);
+  }, [api, existingStory]);
   const estimate = useMemo(
     () => ({
       scenes: 2 + params.decisionCount * (params.choicesPerDecision + 1),
@@ -667,6 +709,20 @@ function CreationWizard({
   );
   return (
     <div className="wizard page-card">
+      {existingStory && (
+        <div className="wizard-editing-banner">
+          <div>
+            <strong>Modification du brouillon</strong>
+            <span>
+              Les réponses sont préremplies. Le scénario existant reste
+              consultable tant que vous ne le régénérez pas.
+            </span>
+          </div>
+          <button className="ghost" onClick={onCancel}>
+            Voir le scénario
+          </button>
+        </div>
+      )}
       <div className="steps">
         {[
           "Pour qui ?",
@@ -880,7 +936,11 @@ function CreationWizard({
         )}
         {step === 5 && (
           <>
-            <h2>Tout est prêt pour le brouillon</h2>
+            <h2>
+              {existingStory
+                ? "Enregistrer les modifications"
+                : "Tout est prêt pour le brouillon"}
+            </h2>
             <div className="summary-card">
               <div>
                 <strong>{title}</strong>
@@ -923,10 +983,9 @@ function CreationWizard({
         <div className="wizard-actions">
           <button
             className="ghost"
-            disabled={step === 1}
-            onClick={() => setStep(step - 1)}
+            onClick={() => (step === 1 ? onCancel() : setStep(step - 1))}
           >
-            Retour
+            {step === 1 && existingStory ? "Voir le scénario" : "Retour"}
           </button>
           {step < 5 ? (
             <button className="primary" onClick={() => setStep(step + 1)}>
@@ -939,23 +998,33 @@ function CreationWizard({
               onClick={async () => {
                 setBusy(true);
                 try {
-                  onCreated(
-                    await api<Story>("/api/stories", {
-                      method: "POST",
-                      body: JSON.stringify({
-                        title,
-                        description,
-                        age: params.age,
-                        parameters: params,
-                      }),
-                    }),
-                  );
+                  const body = JSON.stringify({
+                    title,
+                    description,
+                    age: params.age,
+                    parameters: params,
+                  });
+                  const story =
+                    existingStory && existingVersion
+                      ? await api<Story>(
+                          `/api/stories/${existingStory.id}/versions/${existingVersion.id}`,
+                          { method: "PATCH", body },
+                        )
+                      : await api<Story>("/api/stories", {
+                          method: "POST",
+                          body,
+                        });
+                  onSaved(story);
                 } finally {
                   setBusy(false);
                 }
               }}
             >
-              {busy ? "Création…" : "Créer le brouillon"}
+              {busy
+                ? "Enregistrement…"
+                : existingStory
+                  ? "Enregistrer le brouillon"
+                  : "Créer le brouillon"}
             </button>
           )}
         </div>
@@ -1147,11 +1216,13 @@ function StoryStudio({
   api,
   onRefresh,
   onNotice,
+  onEditCreation,
 }: {
   story: Story;
   api: <T>(url: string, init?: RequestInit) => Promise<T>;
   onRefresh: () => void;
   onNotice: (notice: { tone: "ok" | "error" | "info"; text: string }) => void;
+  onEditCreation: () => void;
 }) {
   const version = story.versions?.[0];
   const [narrative, setNarrative] = useState<NarrativeStory | null>(null);
@@ -1229,6 +1300,11 @@ function StoryStudio({
           <p>{story.description}</p>
         </div>
         <div className="studio-actions">
+          {version.status === "draft" && (
+            <button className="ghost" onClick={onEditCreation}>
+              <PencilLine /> Modifier la création
+            </button>
+          )}
           {!narrative && (
             <button
               className="primary"

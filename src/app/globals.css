@@ -553,6 +553,25 @@ button {
   padding: 0;
   overflow: hidden;
 }
+.wizard-editing-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 20px;
+  border-bottom: 1px solid #d8cff0;
+  background: var(--lavender);
+  color: var(--purple);
+}
+.wizard-editing-banner strong,
+.wizard-editing-banner span {
+  display: block;
+}
+.wizard-editing-banner span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .steps {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -1063,6 +1082,10 @@ button {
   }
   .wizard-body {
     padding: 22px 16px;
+  }
+  .wizard-editing-banner {
+    align-items: stretch;
+    flex-direction: column;
   }
   .choice-cards {
     grid-template-columns: 1fr;
