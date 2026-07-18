@@ -149,3 +149,135 @@ test("les voix ElevenLabs sont proposées dans une liste déroulante", async ({
   await voiceSelect.selectOption("voice-clone");
   await expect(page.locator("audio.voice-preview")).toBeVisible();
 });
+
+test("un dépassement de budget demande une confirmation détaillée", async ({
+  page,
+}) => {
+  const storyId = "budget-story";
+  const versionId = "11111111-1111-4111-8111-111111111111";
+  const story = {
+    id: storyId,
+    uuid: "ffffff-budget-story",
+    title: "Histoire budget",
+    description: "Vérification du plafond",
+    age: 4,
+    versions: [
+      {
+        id: versionId,
+        version: 1,
+        status: "validated",
+        parametersJson: "{}",
+        estimatedCostCents: 55,
+        actualCostCents: 4,
+      },
+    ],
+    assets: [],
+    latestJob: null,
+  };
+  const narrative = {
+    schemaVersion: "1.0",
+    title: story.title,
+    description: story.description,
+    age: 4,
+    targetDurationSeconds: 120,
+    startSceneId: "intro",
+    scenes: [
+      {
+        id: "intro",
+        type: "narrative",
+        title: "Introduction",
+        text: "Une courte introduction.",
+      },
+      {
+        id: "fin",
+        type: "ending",
+        title: "Fin",
+        text: "Une fin heureuse.",
+      },
+    ],
+    choices: [
+      {
+        id: "suite",
+        sourceSceneId: "intro",
+        label: "Continuer",
+        targetSceneId: "fin",
+        order: 0,
+      },
+    ],
+  };
+  await page.route(/\/api\/stories(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ list: [story] }),
+    });
+  });
+  await page.route(`**/api/stories/${storyId}`, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(story),
+    });
+  });
+  await page.route(
+    `**/api/stories/${storyId}/versions/${versionId}/narrative`,
+    async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          narrative,
+          validation: { valid: true, issues: [] },
+        }),
+      });
+    },
+  );
+  let overrideConfirmed = false;
+  await page.route("**/api/generation-jobs", async (route) => {
+    const body = route.request().postDataJSON() as {
+      overrideBudget?: boolean;
+    };
+    if (!body.overrideBudget) {
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          code: "BUDGET_EXCEEDED",
+          message:
+            "Le budget configuré est atteint. Une confirmation explicite est nécessaire.",
+          fieldErrors: {
+            budget: [
+              "Estimation de la génération : 0,55 €.",
+              "Total projeté pour cette histoire : 0,59 € sur un plafond de 0,50 €.",
+            ],
+          },
+        }),
+      });
+      return;
+    }
+    overrideConfirmed = true;
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({
+        job: {
+          id: "job-budget",
+          status: "queued",
+          progress: 0,
+          steps: [],
+        },
+      }),
+    });
+  });
+
+  await authenticate(page);
+  await page.getByRole("heading", { name: story.title }).click();
+  await page
+    .getByRole("button", { name: "Générer les médias & le ZIP" })
+    .click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Confirmer le dépassement du budget",
+    }),
+  ).toBeVisible();
+  await expect(page.getByText("0,59 € sur un plafond de 0,50 €")).toBeVisible();
+  await page.getByRole("button", { name: "Confirmer et générer" }).click();
+  await expect.poll(() => overrideConfirmed).toBe(true);
+});

@@ -52,6 +52,10 @@ function monthStart() {
   return value;
 }
 
+function formatEuros(cents: number) {
+  return `${(cents / 100).toFixed(2).replace(".", ",")} €`;
+}
+
 export function getBudgetState(versionId?: string) {
   ensureDatabase();
   const config = db
@@ -179,18 +183,32 @@ export function createGenerationJob(versionId: string, overrideBudget = false) {
       .where(inArray(generationJobs.status, ["queued", "running"]))
       .get()?.total ?? 0;
   const estimate = version.estimatedCostCents;
-  if (
-    !overrideBudget &&
-    ((budget.monthlyBudgetCents > 0 &&
-      budget.monthlySpentCents + activeReserved + estimate >
-        budget.monthlyBudgetCents) ||
-      (budget.storyBudgetCents > 0 &&
-        budget.storySpentCents + estimate > budget.storyBudgetCents))
-  ) {
+  const projectedMonthly = budget.monthlySpentCents + activeReserved + estimate;
+  const projectedStory = budget.storySpentCents + estimate;
+  const monthlyExceeded =
+    budget.monthlyBudgetCents > 0 &&
+    projectedMonthly > budget.monthlyBudgetCents;
+  const storyExceeded =
+    budget.storyBudgetCents > 0 && projectedStory > budget.storyBudgetCents;
+  if (!overrideBudget && (monthlyExceeded || storyExceeded)) {
+    const details = [
+      `Estimation de la génération : ${formatEuros(estimate)}.`,
+      ...(storyExceeded
+        ? [
+            `Total projeté pour cette histoire : ${formatEuros(projectedStory)} sur un plafond de ${formatEuros(budget.storyBudgetCents)}.`,
+          ]
+        : []),
+      ...(monthlyExceeded
+        ? [
+            `Total mensuel projeté : ${formatEuros(projectedMonthly)} sur un budget de ${formatEuros(budget.monthlyBudgetCents)}.`,
+          ]
+        : []),
+    ];
     throw new ApiError(
       409,
       "BUDGET_EXCEEDED",
       "Le budget configuré est atteint. Une confirmation explicite est nécessaire.",
+      { budget: details },
     );
   }
   const id = randomUUID();

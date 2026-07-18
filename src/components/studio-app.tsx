@@ -71,9 +71,20 @@ type ElevenLabsVoice = {
   labels?: Record<string, string>;
 };
 type ApiFailure = {
+  code?: string;
   message?: string;
   fieldErrors?: Record<string, string[]>;
 };
+
+class ApiClientError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+    public fieldErrors: Record<string, string[]> = {},
+  ) {
+    super(message);
+  }
+}
 
 const initialParameters: CreationParameters = {
   childName: "Mila",
@@ -100,10 +111,12 @@ async function parseResponse<T>(response: Response): Promise<T> {
       .flat()
       .slice(0, 3)
       .join(" ");
-    throw new Error(
+    throw new ApiClientError(
+      error.code ?? `HTTP_${response.status}`,
       [error.message ?? `HTTP ${response.status}`, details]
         .filter(Boolean)
         .join(" "),
+      error.fieldErrors,
     );
   }
   if (response.status === 204) return undefined as T;
@@ -1441,6 +1454,9 @@ function StoryStudio({
   const [tab, setTab] = useState<"list" | "graph" | "json">("list");
   const [json, setJson] = useState("");
   const [busy, setBusy] = useState("");
+  const [budgetConfirmation, setBudgetConfirmation] = useState<{
+    details: string[];
+  } | null>(null);
   const [job, setJob] = useState<{
     id: string;
     status: string;
@@ -1493,6 +1509,35 @@ function StoryStudio({
         tone: "error",
         text: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      setBusy("");
+    }
+  };
+  const requestMediaGeneration = async (overrideBudget = false) => {
+    setBusy("media");
+    try {
+      const data = await api<{ job: typeof job }>("/api/generation-jobs", {
+        method: "POST",
+        body: JSON.stringify({ versionId: version.id, overrideBudget }),
+      });
+      setJob(data.job);
+      setBudgetConfirmation(null);
+      onRefresh();
+    } catch (error) {
+      if (
+        !overrideBudget &&
+        error instanceof ApiClientError &&
+        error.code === "BUDGET_EXCEEDED"
+      ) {
+        setBudgetConfirmation({
+          details: error.fieldErrors.budget ?? [error.message],
+        });
+      } else {
+        onNotice({
+          tone: "error",
+          text: error instanceof Error ? error.message : String(error),
+        });
+      }
     } finally {
       setBusy("");
     }
@@ -1550,20 +1595,11 @@ function StoryStudio({
             <button
               className="primary"
               disabled={!!busy}
-              onClick={() =>
-                action("media", async () => {
-                  const data = await api<{ job: typeof job }>(
-                    "/api/generation-jobs",
-                    {
-                      method: "POST",
-                      body: JSON.stringify({ versionId: version.id }),
-                    },
-                  );
-                  setJob(data.job);
-                })
-              }
+              onClick={() => void requestMediaGeneration()}
             >
-              Générer les médias & le ZIP
+              {busy === "media"
+                ? "Préparation…"
+                : "Générer les médias & le ZIP"}
             </button>
           )}
           {version.status === "ready" && (
@@ -1621,6 +1657,39 @@ function StoryStudio({
           )}
         </div>
       </div>
+      {budgetConfirmation && (
+        <div className="budget-confirmation page-card">
+          <CircleDollarSign />
+          <div>
+            <h3>Confirmer le dépassement du budget</h3>
+            <p>
+              La génération peut dépasser le plafond configuré. Vérifiez les
+              montants avant de continuer.
+            </p>
+            <ul>
+              {budgetConfirmation.details.map((detail) => (
+                <li key={detail}>{detail}</li>
+              ))}
+            </ul>
+          </div>
+          <div className="budget-confirmation-actions">
+            <button
+              className="ghost"
+              disabled={!!busy}
+              onClick={() => setBudgetConfirmation(null)}
+            >
+              Annuler
+            </button>
+            <button
+              className="primary"
+              disabled={!!busy}
+              onClick={() => void requestMediaGeneration(true)}
+            >
+              {busy === "media" ? "Lancement…" : "Confirmer et générer"}
+            </button>
+          </div>
+        </div>
+      )}
       {job && (
         <div className="progress-card page-card">
           <div>

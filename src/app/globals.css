@@ -762,6 +762,37 @@ button {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+.budget-confirmation {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid #efc970;
+  background: #fff9e9;
+}
+.budget-confirmation > svg {
+  width: 34px;
+  height: 34px;
+  color: #a66c00;
+}
+.budget-confirmation h3,
+.budget-confirmation p {
+  margin: 0;
+}
+.budget-confirmation p {
+  margin-top: 4px;
+  color: var(--muted);
+}
+.budget-confirmation ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: #765115;
+  font-size: 13px;
+}
+.budget-confirmation-actions {
+  display: flex;
+  gap: 8px;
+}
 .progress-card > div:first-child {
   display: flex;
   justify-content: space-between;
@@ -1145,6 +1176,13 @@ button {
   }
   .studio-actions {
     width: 100%;
+  }
+  .budget-confirmation {
+    grid-template-columns: 1fr;
+  }
+  .budget-confirmation-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
   }
   .studio-actions button {
     width: 100%;
