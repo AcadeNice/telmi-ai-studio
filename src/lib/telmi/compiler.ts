@@ -21,6 +21,7 @@ export function compileTelmiDocuments(
   uuid: string,
   version: number,
   illustrationMode: "cover" | "choices" | "every-scene" = "every-scene",
+  credits?: { author?: string; voice?: string; publisher?: string },
 ) {
   const sceneKeys = new Map(
     story.scenes.map((scene, index) => [scene.id, `s${index + 1}`]),
@@ -146,6 +147,9 @@ export function compileTelmiDocuments(
       age: story.age,
       category: "Histoire Interactive",
       designer: "Telmi AI Studio",
+      ...(credits?.author ? { author: credits.author } : {}),
+      ...(credits?.voice ? { voice: credits.voice } : {}),
+      ...(credits?.publisher ? { publisher: credits.publisher } : {}),
     },
     nodes,
     notes,

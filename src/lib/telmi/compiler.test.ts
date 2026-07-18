@@ -77,4 +77,23 @@ describe("Telmi compiler", () => {
         .every(([, stage]) => stage.image === null),
     ).toBe(true);
   });
+
+  it("includes author and readable voice credits in metadata", () => {
+    const { metadata } = compileTelmiDocuments(
+      story,
+      "ffffff-test",
+      1,
+      "cover",
+      {
+        author: "Telmi AI Studio",
+        voice: "Jessica - Playful, Bright, Warm",
+        publisher: "Telmi AI Studio",
+      },
+    );
+    expect(metadata).toMatchObject({
+      author: "Telmi AI Studio",
+      voice: "Jessica - Playful, Bright, Warm",
+      publisher: "Telmi AI Studio",
+    });
+  });
 });

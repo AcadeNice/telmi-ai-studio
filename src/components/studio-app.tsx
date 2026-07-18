@@ -100,6 +100,7 @@ const initialParameters: CreationParameters = {
   explicitMoral: false,
   illustrationMode: "choices",
   voiceMode: "single",
+  author: "Telmi AI Studio",
 };
 
 async function parseResponse<T>(response: Response): Promise<T> {
@@ -728,9 +729,13 @@ function CreationWizard({
   }, [api]);
   useEffect(() => {
     if (existingStory) return;
-    void api<{ childName: string }>("/api/settings")
+    void api<{ childName: string; instanceName: string }>("/api/settings")
       .then((settings) => {
-        setParams((current) => ({ ...current, childName: settings.childName }));
+        setParams((current) => ({
+          ...current,
+          childName: settings.childName,
+          author: settings.instanceName,
+        }));
         setTitle((current) =>
           current === "L’aventure de Mila"
             ? `L’aventure de ${settings.childName}`
@@ -1013,7 +1018,11 @@ function CreationWizard({
                       normalizeVoiceLanguage(selectedVoice.labels?.language) !==
                         language
                     )
-                      setParams({ ...params, defaultVoiceId: undefined });
+                      setParams({
+                        ...params,
+                        defaultVoiceId: undefined,
+                        defaultVoiceName: undefined,
+                      });
                   }}
                 >
                   {availableVoiceLanguages.map((language) => (
@@ -1027,12 +1036,17 @@ function CreationWizard({
               <Field label="Voix ElevenLabs">
                 <select
                   value={params.defaultVoiceId ?? ""}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const voiceId = e.target.value || undefined;
+                    const voice = voices.find(
+                      (item) => item.voice_id === voiceId,
+                    );
                     setParams({
                       ...params,
-                      defaultVoiceId: e.target.value || undefined,
-                    })
-                  }
+                      defaultVoiceId: voiceId,
+                      defaultVoiceName: voice?.name,
+                    });
+                  }}
                   disabled={voicesStatus === "loading"}
                 >
                   <option value="">
@@ -1187,7 +1201,11 @@ function CreationWizard({
                     title,
                     description,
                     age: params.age,
-                    parameters: params,
+                    parameters: {
+                      ...params,
+                      defaultVoiceName:
+                        selectedVoice?.name ?? params.defaultVoiceName,
+                    },
                   });
                   const story =
                     existingStory && existingVersion

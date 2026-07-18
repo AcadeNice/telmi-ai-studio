@@ -60,12 +60,20 @@ export async function buildTelmiPack(options: {
   assetDirectory: string;
   outputPath: string;
   illustrationMode?: "cover" | "choices" | "every-scene";
+  author?: string;
+  voice?: string;
+  publisher?: string;
 }) {
   const documents = compileTelmiDocuments(
     options.story,
     options.uuid,
     options.version,
     options.illustrationMode,
+    {
+      author: options.author,
+      voice: options.voice,
+      publisher: options.publisher,
+    },
   );
   const validation = validateTelmiDocuments(documents.nodes);
   if (!validation.valid) throw new Error(validation.errors.join("\n"));

@@ -476,13 +476,26 @@ async function runCompile(jobId: string) {
   const narrative = loadNarrative(version.id)!;
   const parameters = JSON.parse(version.parametersJson) as {
     illustrationMode?: "cover" | "choices" | "every-scene";
+    author?: string;
+    defaultVoiceName?: string;
   };
   const illustrationMode = parameters.illustrationMode ?? "choices";
+  const config = db
+    .select()
+    .from(settings)
+    .where(eq(settings.id, "primary"))
+    .get();
+  const credits = {
+    author: parameters.author ?? config?.instanceName ?? "Telmi AI Studio",
+    voice: parameters.defaultVoiceName,
+    publisher: config?.instanceName ?? "Telmi AI Studio",
+  };
   const documents = compileTelmiDocuments(
     narrative,
     story.uuid,
     version.version,
     illustrationMode,
+    credits,
   );
   const validation = validateTelmiDocuments(documents.nodes);
   if (!validation.valid) throw new Error(validation.errors.join(" "));
@@ -522,6 +535,7 @@ async function runCompile(jobId: string) {
     assetDirectory: assetDir,
     outputPath: packPath,
     illustrationMode,
+    ...credits,
   });
   await recordAsset(
     version.id,

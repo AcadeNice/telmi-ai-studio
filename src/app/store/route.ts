@@ -27,6 +27,7 @@ export async function GET(request: Request) {
       .all();
     const origin = config.publicUrl.replace(/\/$/, "");
     const data = published.map(({ story, version }) => {
+      const parameters = readCredits(version.parametersJson);
       const pack = db
         .select()
         .from(generatedAssets)
@@ -63,6 +64,10 @@ export async function GET(request: Request) {
         created_at: version.createdAt.toISOString(),
         updated_at: (version.publishedAt ?? version.updatedAt).toISOString(),
         uuid: story.uuid,
+        author: parameters.author ?? config.instanceName,
+        ...(parameters.defaultVoiceName
+          ? { voice: parameters.defaultVoiceName }
+          : {}),
         designer: "Telmi AI Studio",
         publisher: config.instanceName,
         category: "Histoire Interactive",
@@ -89,5 +94,27 @@ export async function GET(request: Request) {
     );
   } catch (error) {
     return apiErrorResponse(error);
+  }
+}
+
+function readCredits(parametersJson: string) {
+  try {
+    const value = JSON.parse(parametersJson) as {
+      author?: unknown;
+      defaultVoiceName?: unknown;
+    };
+    return {
+      author:
+        typeof value.author === "string" && value.author.trim()
+          ? value.author.trim()
+          : undefined,
+      defaultVoiceName:
+        typeof value.defaultVoiceName === "string" &&
+        value.defaultVoiceName.trim()
+          ? value.defaultVoiceName.trim()
+          : undefined,
+    };
+  } catch {
+    return {};
   }
 }

@@ -17,6 +17,8 @@ export const creationParametersSchema = z.object({
     .default("choices"),
   voiceMode: z.enum(["single", "characters"]).default("single"),
   defaultVoiceId: z.string().trim().min(1).optional(),
+  defaultVoiceName: z.string().trim().min(1).max(160).optional(),
+  author: z.string().trim().min(1).max(160).optional(),
 });
 
 export const narrativeSceneSchema = z.object({
