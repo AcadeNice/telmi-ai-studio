@@ -7,6 +7,8 @@ export const creationParametersSchema = z.object({
   mainCharacter: z.string().trim().min(1).max(120),
   universe: z.string().trim().min(1).max(160),
   value: z.string().trim().min(1).max(120),
+  requiredStoryElements: z.string().trim().max(2_000).optional(),
+  artDirection: z.string().trim().max(2_000).optional(),
   decisionCount: z.number().int().min(1).max(8).default(3),
   choicesPerDecision: z.number().int().min(2).max(5).default(2),
   endingStrategy: z.enum(["shared", "per-branch", "mixed"]).default("mixed"),
@@ -19,6 +21,14 @@ export const creationParametersSchema = z.object({
   defaultVoiceId: z.string().trim().min(1).optional(),
   defaultVoiceName: z.string().trim().min(1).max(160).optional(),
   author: z.string().trim().min(1).max(160).optional(),
+  preservedSceneIds: z
+    .array(z.string().trim().min(1).max(64))
+    .max(200)
+    .optional(),
+  preservedChoiceIds: z
+    .array(z.string().trim().min(1).max(64))
+    .max(500)
+    .optional(),
 });
 
 export const narrativeSceneSchema = z.object({

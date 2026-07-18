@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
-import { apiErrorResponse, ApiError } from "@/server/api/response";
+import { z } from "zod";
+import { apiErrorResponse, ApiError, readJson } from "@/server/api/response";
 import { requireMutationSession } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { stories, storyVersions, usageRecords } from "@/server/db/schema";
@@ -7,8 +8,15 @@ import { randomUUID } from "node:crypto";
 import { creationParametersSchema } from "@/lib/narrative/schema";
 import { validateNarrativeGraph } from "@/lib/narrative/validator";
 import { generateNarrative } from "@/server/providers/text";
-import { saveNarrative } from "@/server/stories/service";
+import { loadNarrative, saveNarrative } from "@/server/stories/service";
 import { writeAppLog } from "@/server/logging/app-log";
+
+const requestSchema = z.object({
+  mode: z.enum(["create", "refine"]).default("create"),
+  instruction: z.string().trim().max(2_000).optional(),
+  preserveSceneIds: z.array(z.string().min(1).max(64)).max(200).default([]),
+  preserveChoiceIds: z.array(z.string().min(1).max(64)).max(500).default([]),
+});
 
 export async function POST(
   request: Request,
@@ -30,10 +38,34 @@ export async function POST(
         "IMMUTABLE_VERSION",
         "Seul un brouillon peut être régénéré.",
       );
+    const input = requestSchema.parse(await readJson(request));
     const parameters = creationParametersSchema.parse(
       JSON.parse(row.parametersJson),
     );
-    const result = await generateNarrative(parameters);
+    const currentNarrative =
+      input.mode === "refine" ? loadNarrative(versionId) : undefined;
+    if (input.mode === "refine" && !currentNarrative)
+      throw new ApiError(
+        404,
+        "NARRATIVE_NOT_FOUND",
+        "Aucun scénario à améliorer n’a été trouvé.",
+      );
+    const result = await generateNarrative(parameters, {
+      currentNarrative: currentNarrative ?? undefined,
+      instruction: input.instruction,
+      preserveSceneIds: [
+        ...new Set([
+          ...(parameters.preservedSceneIds ?? []),
+          ...input.preserveSceneIds,
+        ]),
+      ],
+      preserveChoiceIds: [
+        ...new Set([
+          ...(parameters.preservedChoiceIds ?? []),
+          ...input.preserveChoiceIds,
+        ]),
+      ],
+    });
     const validation = validateNarrativeGraph(result.narrative);
     if (!validation.valid) {
       await writeAppLog("warning", "Graphe IA invalide après réparation", {

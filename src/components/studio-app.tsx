@@ -22,6 +22,8 @@ import {
 import { GraphEditor } from "./graph-editor";
 import type {
   CreationParameters,
+  NarrativeChoice,
+  NarrativeScene,
   NarrativeStory,
 } from "@/lib/narrative/schema";
 
@@ -905,6 +907,36 @@ function CreationWizard({
                 />
               </Field>
             </div>
+            <div className="creative-brief-grid">
+              <Field label="Éléments à intégrer (facultatif)">
+                <textarea
+                  value={params.requiredStoryElements ?? ""}
+                  placeholder="Ex. : des arcs-en-ciel, une princesse et un elfe qui s’appelle Noa…"
+                  onChange={(event) =>
+                    setParams({
+                      ...params,
+                      requiredStoryElements: event.target.value || undefined,
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Direction artistique (facultatif)">
+                <textarea
+                  value={params.artDirection ?? ""}
+                  placeholder="Ex. : aquarelle douce, couleurs pastel, forêt lumineuse, ambiance féerique…"
+                  onChange={(event) =>
+                    setParams({
+                      ...params,
+                      artDirection: event.target.value || undefined,
+                    })
+                  }
+                />
+              </Field>
+            </div>
+            <p className="field-help">
+              Les éléments imposés guident le récit. La direction artistique
+              guide surtout les illustrations et les prompts d’image.
+            </p>
           </>
         )}
         {step === 3 && (
@@ -1166,6 +1198,22 @@ function CreationWizard({
                   <dd>{params.decisionCount}</dd>
                 </div>
               </dl>
+              {(params.requiredStoryElements || params.artDirection) && (
+                <div className="creative-summary">
+                  {params.requiredStoryElements && (
+                    <p>
+                      <strong>Dans l’histoire :</strong>{" "}
+                      {params.requiredStoryElements}
+                    </p>
+                  )}
+                  {params.artDirection && (
+                    <p>
+                      <strong>Direction artistique :</strong>{" "}
+                      {params.artDirection}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
             <Field label="Description facultative">
               <textarea
@@ -1479,6 +1527,10 @@ function StoryStudio({
   const [tab, setTab] = useState<"list" | "graph" | "json">("list");
   const [json, setJson] = useState("");
   const [busy, setBusy] = useState("");
+  const [refinementInstruction, setRefinementInstruction] = useState("");
+  const [preservedSceneIds, setPreservedSceneIds] = useState<string[]>([]);
+  const [preservedChoiceIds, setPreservedChoiceIds] = useState<string[]>([]);
+  const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
   const [budgetConfirmation, setBudgetConfirmation] = useState<{
     details: string[];
   } | null>(null);
@@ -1495,10 +1547,14 @@ function StoryStudio({
       const data = await api<{
         narrative: NarrativeStory;
         validation: typeof validation;
+        preservedSceneIds: string[];
+        preservedChoiceIds: string[];
       }>(`/api/stories/${story.id}/versions/${version.id}/narrative`);
       setNarrative(data.narrative);
       setJson(JSON.stringify(data.narrative, null, 2));
       setValidation(data.validation);
+      setPreservedSceneIds(data.preservedSceneIds ?? []);
+      setPreservedChoiceIds(data.preservedChoiceIds ?? []);
     } catch {
       setNarrative(null);
     }
@@ -1563,6 +1619,91 @@ function StoryStudio({
           text: error instanceof Error ? error.message : String(error),
         });
       }
+    } finally {
+      setBusy("");
+    }
+  };
+  const saveSceneEdit = async (
+    scene: NarrativeScene,
+    editedChoices: NarrativeChoice[],
+  ) => {
+    if (!narrative) return false;
+    setBusy(`scene:${scene.id}`);
+    try {
+      const editedChoiceMap = new Map(
+        editedChoices.map((choice) => [choice.id, choice]),
+      );
+      const nextNarrative: NarrativeStory = {
+        ...narrative,
+        scenes: narrative.scenes.map((item) =>
+          item.id === scene.id ? scene : item,
+        ),
+        choices: narrative.choices.map(
+          (choice) => editedChoiceMap.get(choice.id) ?? choice,
+        ),
+      };
+      const result = await api<{
+        narrative: NarrativeStory;
+        validation: typeof validation;
+        preservedSceneIds: string[];
+        preservedChoiceIds: string[];
+      }>(`/api/stories/${story.id}/versions/${version.id}/narrative`, {
+        method: "PUT",
+        body: JSON.stringify(nextNarrative),
+      });
+      setNarrative(result.narrative);
+      setJson(JSON.stringify(result.narrative, null, 2));
+      setValidation(result.validation);
+      setPreservedSceneIds(result.preservedSceneIds ?? []);
+      setPreservedChoiceIds(result.preservedChoiceIds ?? []);
+      setSelectedSceneId(null);
+      onNotice({
+        tone: "ok",
+        text: `La scène « ${scene.title} » est enregistrée et sera protégée lors du prochain passage de l’IA.`,
+      });
+      return true;
+    } catch (error) {
+      onNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    } finally {
+      setBusy("");
+    }
+  };
+  const refineScenario = async () => {
+    setBusy("refine");
+    try {
+      const result = await api<{
+        narrative: NarrativeStory;
+        validation: typeof validation;
+      }>(
+        `/api/stories/${story.id}/versions/${version.id}/generate-narrative`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            mode: "refine",
+            instruction: refinementInstruction || undefined,
+            preserveSceneIds: preservedSceneIds,
+            preserveChoiceIds: preservedChoiceIds,
+          }),
+        },
+      );
+      setNarrative(result.narrative);
+      setJson(JSON.stringify(result.narrative, null, 2));
+      setValidation(result.validation);
+      setRefinementInstruction("");
+      onNotice({
+        tone: "ok",
+        text: "Le scénario a été harmonisé. Vos scènes modifiées ont été conservées.",
+      });
+      onRefresh();
+    } catch (error) {
+      onNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error),
+      });
     } finally {
       setBusy("");
     }
@@ -1787,21 +1928,80 @@ function StoryStudio({
               </span>
             </div>
           )}
+          {version.status === "draft" && (
+            <div className="refinement-card page-card">
+              <div className="refinement-copy">
+                <span className="refinement-icon">
+                  <Sparkles />
+                </span>
+                <div>
+                  <h3>Améliorer ou terminer avec l’IA</h3>
+                  <p>
+                    Modifiez d’abord les scènes souhaitées. Elles seront
+                    verrouillées pendant que l’IA harmonise et complète le
+                    reste du scénario.
+                  </p>
+                  {preservedSceneIds.length > 0 && (
+                    <small>
+                      {preservedSceneIds.length} scène
+                      {preservedSceneIds.length > 1 ? "s" : ""} protégée
+                      {preservedSceneIds.length > 1 ? "s" : ""}
+                    </small>
+                  )}
+                </div>
+              </div>
+              <textarea
+                value={refinementInstruction}
+                maxLength={2000}
+                placeholder="Consigne facultative : développe davantage la rencontre avec l’elfe, rends la fin plus douce…"
+                onChange={(event) =>
+                  setRefinementInstruction(event.target.value)
+                }
+              />
+              <button
+                className="secondary"
+                disabled={!!busy}
+                onClick={() => void refineScenario()}
+              >
+                <Sparkles />
+                {busy === "refine"
+                  ? "Amélioration en cours…"
+                  : "Relancer l’IA sur ce scénario"}
+              </button>
+            </div>
+          )}
           {tab === "list" && (
             <div className="scene-list">
               {narrative.scenes.map((scene, index) => (
-                <article key={scene.id} className="scene-card">
-                  <span>{index + 1}</span>
-                  <div>
-                    <small>{scene.type}</small>
-                    <h3>{scene.title}</h3>
-                    <p>{scene.text}</p>
-                  </div>
-                </article>
+                <SceneEditorCard
+                  key={scene.id}
+                  scene={scene}
+                  index={index}
+                  choices={narrative.choices.filter(
+                    (choice) => choice.sourceSceneId === scene.id,
+                  )}
+                  editable={version.status === "draft"}
+                  forceOpen={selectedSceneId === scene.id}
+                  busy={busy === `scene:${scene.id}`}
+                  onSave={saveSceneEdit}
+                  onClose={() => setSelectedSceneId(null)}
+                />
               ))}
             </div>
           )}
-          {tab === "graph" && <GraphEditor narrative={narrative} />}
+          {tab === "graph" && (
+            <GraphEditor
+              narrative={narrative}
+              onSceneSelect={
+                version.status === "draft"
+                  ? (sceneId) => {
+                      setSelectedSceneId(sceneId);
+                      setTab("list");
+                    }
+                  : undefined
+              }
+            />
+          )}
           {tab === "json" && (
             <div className="json-editor">
               <textarea
@@ -1818,12 +2018,17 @@ function StoryStudio({
                       const result = await api<{
                         narrative: NarrativeStory;
                         validation: typeof validation;
+                        preservedSceneIds: string[];
+                        preservedChoiceIds: string[];
                       }>(
                         `/api/stories/${story.id}/versions/${version.id}/narrative`,
                         { method: "PUT", body: JSON.stringify(parsed) },
                       );
                       setNarrative(result.narrative);
+                      setJson(JSON.stringify(result.narrative, null, 2));
                       setValidation(result.validation);
+                      setPreservedSceneIds(result.preservedSceneIds ?? []);
+                      setPreservedChoiceIds(result.preservedChoiceIds ?? []);
                     })
                   }
                 >
@@ -1844,6 +2049,151 @@ function StoryStudio({
         </div>
       )}
     </div>
+  );
+}
+
+function SceneEditorCard({
+  scene,
+  index,
+  choices,
+  editable,
+  forceOpen,
+  busy,
+  onSave,
+  onClose,
+}: {
+  scene: NarrativeScene;
+  index: number;
+  choices: NarrativeChoice[];
+  editable: boolean;
+  forceOpen: boolean;
+  busy: boolean;
+  onSave: (
+    scene: NarrativeScene,
+    choices: NarrativeChoice[],
+  ) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const [editing, setEditing] = useState(forceOpen);
+  const [draft, setDraft] = useState(scene);
+  const [draftChoices, setDraftChoices] = useState(choices);
+
+  const cancel = () => {
+    setDraft(scene);
+    setDraftChoices(choices);
+    setEditing(false);
+    onClose();
+  };
+
+  return (
+    <article
+      id={`scene-${scene.id}`}
+      className={`scene-card ${editing ? "editing" : ""}`}
+    >
+      <span>{index + 1}</span>
+      <div className="scene-card-content">
+        <div className="scene-card-heading">
+          <small>{scene.type}</small>
+          {editable && !editing && (
+            <button
+              className="ghost compact"
+              onClick={() => {
+                setDraft(scene);
+                setDraftChoices(choices);
+                setEditing(true);
+              }}
+            >
+              <PencilLine /> Modifier cette scène
+            </button>
+          )}
+        </div>
+        {!editing ? (
+          <>
+            <h3>{scene.title}</h3>
+            <p>{scene.text}</p>
+            {choices.length > 0 && (
+              <div className="scene-choice-preview">
+                {choices.map((choice) => (
+                  <span key={choice.id}>{choice.label}</span>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="scene-edit-form">
+            <Field label="Titre de la scène">
+              <input
+                value={draft.title}
+                maxLength={160}
+                onChange={(event) =>
+                  setDraft({ ...draft, title: event.target.value })
+                }
+              />
+            </Field>
+            <Field label="Narration">
+              <textarea
+                value={draft.text}
+                maxLength={12000}
+                onChange={(event) =>
+                  setDraft({ ...draft, text: event.target.value })
+                }
+              />
+            </Field>
+            <Field label="Consigne d’illustration (facultatif)">
+              <textarea
+                value={draft.imagePrompt ?? ""}
+                maxLength={2000}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    imagePrompt: event.target.value || undefined,
+                  })
+                }
+              />
+            </Field>
+            {draftChoices.length > 0 && (
+              <div className="scene-choice-fields">
+                <strong>Choix proposés après cette scène</strong>
+                {draftChoices.map((choice, choiceIndex) => (
+                  <Field
+                    key={choice.id}
+                    label={`Choix ${choiceIndex + 1}`}
+                  >
+                    <input
+                      value={choice.label}
+                      maxLength={160}
+                      onChange={(event) =>
+                        setDraftChoices((current) =>
+                          current.map((item) =>
+                            item.id === choice.id
+                              ? { ...item, label: event.target.value }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+                  </Field>
+                ))}
+              </div>
+            )}
+            <div className="scene-edit-actions">
+              <button className="ghost" disabled={busy} onClick={cancel}>
+                Annuler
+              </button>
+              <button
+                className="primary"
+                disabled={busy || !draft.title.trim() || !draft.text.trim()}
+                onClick={async () => {
+                  if (await onSave(draft, draftChoices)) setEditing(false);
+                }}
+              >
+                {busy ? "Enregistrement…" : "Enregistrer la scène"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </article>
   );
 }
 

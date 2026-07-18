@@ -11,7 +11,13 @@ import {
 } from "@xyflow/react";
 import type { NarrativeStory } from "@/lib/narrative/schema";
 
-export function GraphEditor({ narrative }: { narrative: NarrativeStory }) {
+export function GraphEditor({
+  narrative,
+  onSceneSelect,
+}: {
+  narrative: NarrativeStory;
+  onSceneSelect?: (sceneId: string) => void;
+}) {
   const nodes: Node[] = narrative.scenes.map((scene, index) => ({
     id: scene.id,
     position: scene.position ?? {
@@ -44,6 +50,7 @@ export function GraphEditor({ narrative }: { narrative: NarrativeStory }) {
         fitView
         nodesDraggable={false}
         nodesConnectable={false}
+        onNodeClick={(_, node) => onSceneSelect?.(node.id)}
       >
         <MiniMap />
         <Controls />
