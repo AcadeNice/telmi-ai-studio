@@ -87,7 +87,23 @@ export async function generateSpeech(
       signal: AbortSignal.timeout(120_000),
     },
   );
-  if (!response.ok) throw new Error(`ElevenLabs TTS: HTTP ${response.status}`);
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      detail?: { code?: string; message?: string };
+    } | null;
+    if (
+      response.status === 402 &&
+      payload?.detail?.code === "paid_plan_required"
+    )
+      throw new Error(
+        "La voix ElevenLabs sélectionnée nécessite un abonnement payant. Choisissez une voix prédéfinie ou utilisez un compte ElevenLabs payant.",
+      );
+    throw new Error(
+      payload?.detail?.message
+        ? `ElevenLabs TTS : ${payload.detail.message}`
+        : `ElevenLabs TTS : HTTP ${response.status}`,
+    );
+  }
   assertBoundedResponse(response, MAX_AUDIO_BYTES);
   const audio = Buffer.from(await response.arrayBuffer());
   if (audio.byteLength > MAX_AUDIO_BYTES)

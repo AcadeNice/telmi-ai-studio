@@ -1108,6 +1108,13 @@ function CreationWizard({
                     src={selectedVoice.preview_url}
                   />
                 )}
+                {selectedVoice?.category === "professional" && (
+                  <p className="field-warning">
+                    Cette voix provient de la bibliothèque ElevenLabs. Son
+                    utilisation via l’API nécessite généralement un abonnement
+                    payant.
+                  </p>
+                )}
               </Field>
             </div>
           </>
@@ -1234,7 +1241,7 @@ function ToggleCard({
 }
 
 function isCustomVoice(voice: ElevenLabsVoice) {
-  return voice.category !== "premade";
+  return voice.category === "cloned" || voice.category === "generated";
 }
 
 function normalizeVoiceLanguage(language?: string) {
