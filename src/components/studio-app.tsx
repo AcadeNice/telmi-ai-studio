@@ -2460,16 +2460,22 @@ function MediaReviewPanel({
     }
   };
 
-  const compile = async () => {
+  const compile = async (publish = false) => {
     onBusy("compile");
     try {
       await api(`/api/stories/${storyId}/compile`, {
         method: "POST",
-        body: JSON.stringify({ versionId: version.id, mediaReviewed: true }),
+        body: JSON.stringify({
+          versionId: version.id,
+          mediaReviewed: true,
+          publish,
+        }),
       });
       onNotice({
         tone: "ok",
-        text: "Les médias sont validés et le ZIP Telmi est prêt.",
+        text: publish
+          ? "Les médias sont validés, le ZIP est prêt et l’histoire est publiée dans le store privé."
+          : "Les médias sont validés et le ZIP Telmi est prêt.",
       });
       onRefresh();
     } catch (error) {
@@ -2563,12 +2569,12 @@ function MediaReviewPanel({
           <button
             className="primary"
             disabled={!review.complete || Boolean(busy)}
-            onClick={() => void compile()}
+            onClick={() => void compile(true)}
           >
             <CheckCircle2 />
             {busy === "compile"
-              ? "Création du ZIP…"
-              : "Valider les médias et créer le ZIP"}
+              ? "Création et publication…"
+              : "Créer le ZIP et publier dans le store"}
           </button>
         )}
       </div>
