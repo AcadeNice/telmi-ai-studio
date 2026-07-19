@@ -59,6 +59,7 @@ type Story = {
   description: string;
   age: number;
   deletedAt?: string | null;
+  coverUrl?: string | null;
   versions?: StoryVersion[];
   assets?: Array<{ id: string; type: string }>;
   latestJob?: {
@@ -1465,7 +1466,12 @@ function StoryCard({
   return (
     <article className="story-card" onClick={onClick}>
       <div className="cover-placeholder">
-        <BookHeart />
+        {story.coverUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={story.coverUrl} alt={`Couverture de ${story.title}`} />
+        ) : (
+          <BookHeart />
+        )}
         <span>{story.age}+</span>
       </div>
       <div className="story-card-body">

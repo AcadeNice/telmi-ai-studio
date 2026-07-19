@@ -16,12 +16,13 @@ import type {
 
 export function listStories(includeDeleted = false) {
   ensureDatabase();
-  return db
+  const list = db
     .select()
     .from(stories)
     .where(includeDeleted ? undefined : isNull(stories.deletedAt))
     .orderBy(desc(stories.updatedAt))
     .all();
+  return list.map((story) => getStory(story.id)!);
 }
 
 export function createStory(input: {
@@ -143,7 +144,27 @@ export function getStory(id: string) {
         .orderBy(desc(generationJobs.createdAt))
         .get()
     : null;
-  return { ...story, versions, assets, latestJob };
+  const cover = db
+    .select({
+      id: generatedAssets.id,
+      updatedAt: generatedAssets.updatedAt,
+    })
+    .from(generatedAssets)
+    .innerJoin(storyVersions, eq(generatedAssets.versionId, storyVersions.id))
+    .where(
+      and(eq(storyVersions.storyId, id), eq(generatedAssets.type, "cover")),
+    )
+    .orderBy(desc(storyVersions.version), desc(generatedAssets.updatedAt))
+    .get();
+  return {
+    ...story,
+    versions,
+    assets,
+    latestJob,
+    coverUrl: cover
+      ? `/api/media-assets/${cover.id}/content?v=${cover.updatedAt.getTime()}`
+      : null,
+  };
 }
 
 export function createVersion(storyId: string, parametersJson?: string) {
