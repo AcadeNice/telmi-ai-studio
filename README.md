@@ -24,7 +24,7 @@ openssl rand -hex 32 # valeur de APP_ENCRYPTION_KEY
 docker compose up -d --build
 ```
 
-Ouvrir ensuite [http://localhost:3000](http://localhost:3000). L’assistant crée l’administrateur, les réglages et une clé de store affichée une seule fois. Dès que le premier administrateur existe, l’installation initiale est définitivement désactivée.
+Ouvrir ensuite [http://localhost:3000](http://localhost:3000). L’assistant crée l’administrateur et les réglages. Dès que le premier administrateur existe, l’installation initiale est définitivement désactivée.
 
 Les données persistantes sont dans le volume Docker `telmi-data`, monté sur `/data` : SQLite, médias, ZIP, sauvegardes et journaux. `APP_ENCRYPTION_KEY` doit être sauvegardée séparément ; sa perte rend les clés fournisseurs illisibles.
 
@@ -76,10 +76,10 @@ Après génération, le parent prévisualise, remplace ou régénère chaque mé
 L’URL est :
 
 ```text
-https://votre-instance/store?api_key=VOTRE_CLE
+https://votre-instance/store
 ```
 
-Le catalogue, les couvertures et les ZIP exigent la même clé. La rotation invalide immédiatement l’ancienne valeur. Le format du catalogue suit la [documentation officielle du store Telmi](https://wiki.telmi.fr/stores/creer_son_store_telmi/).
+Le catalogue, les couvertures et les ZIP sont accessibles directement tant que le store est activé dans les paramètres. Le format du catalogue suit la [documentation officielle du store Telmi](https://wiki.telmi.fr/stores/creer_son_store_telmi/).
 
 Le store historique peut encore être lancé pour comparaison :
 

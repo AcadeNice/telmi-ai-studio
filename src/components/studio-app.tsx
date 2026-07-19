@@ -12,7 +12,6 @@ import {
   Copy,
   ExternalLink,
   FileText,
-  KeyRound,
   LayoutDashboard,
   LogOut,
   Image as ImageIcon,
@@ -492,15 +491,11 @@ function Setup({ onDone }: { onDone: (csrf: string) => void }) {
     storyBudgetCents: 300,
   });
   const [error, setError] = useState("");
-  const [key, setKey] = useState("");
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
     try {
-      const result = await parseResponse<{
-        csrfToken: string;
-        storeApiKey: string;
-      }>(
+      const result = await parseResponse<{ csrfToken: string }>(
         await fetch("/api/setup", {
           method: "POST",
           headers: {
@@ -512,29 +507,11 @@ function Setup({ onDone }: { onDone: (csrf: string) => void }) {
           }),
         }),
       );
-      setKey(result.storeApiKey);
-      sessionStorage.setItem("setup-csrf", result.csrfToken);
+      onDone(result.csrfToken);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   }
-  if (key)
-    return (
-      <div className="auth-page">
-        <div className="auth-card">
-          <span className="brand-mark large">T</span>
-          <h1>Votre studio est prêt</h1>
-          <p>Copiez maintenant la clé du store. Elle ne sera plus affichée.</p>
-          <code className="secret-code">{key}</code>
-          <button
-            className="primary"
-            onClick={() => onDone(sessionStorage.getItem("setup-csrf") ?? "")}
-          >
-            Entrer dans le studio
-          </button>
-        </div>
-      </div>
-    );
   return (
     <div className="auth-page">
       <form className="auth-card" onSubmit={submit}>
@@ -2967,7 +2944,6 @@ function SettingsPanel({
     providers: ProviderSettings[];
   };
   const [data, setData] = useState<SettingsData | null>(null);
-  const [storeKey, setStoreKey] = useState("");
   useEffect(() => {
     void api<SettingsData>("/api/settings").then((value) => {
       const providers = (["text", "image", "tts"] as ProviderType[]).map(
@@ -3091,68 +3067,46 @@ function SettingsPanel({
         <div className="store-guide">
           <div className="store-guide-heading">
             <span>
-              <KeyRound />
+              <BookOpen />
             </span>
             <div>
               <strong>Connecter ce store à Telmi Sync</strong>
               <p>
-                La clé protège le catalogue, les couvertures et les ZIP. Une
-                nouvelle clé invalide immédiatement l’ancienne.
+                Le catalogue, les couvertures et les ZIP sont accessibles
+                directement avec l’adresse publique du studio.
               </p>
             </div>
           </div>
           <ol>
             <li>Activez le store privé puis enregistrez les paramètres.</li>
-            <li>Générez une clé et copiez-la immédiatement.</li>
             <li>
               Dans Telmi Sync, ouvrez <strong>Stores</strong>, puis cliquez sur{" "}
               <strong>+ Ajouter un store</strong>.
             </li>
             <li>
-              Collez l’adresse complète ci-dessous et validez le nouveau store.
+              Copiez l’adresse ci-dessous, collez-la dans Telmi Sync et validez
+              le nouveau store.
             </li>
           </ol>
           <div className="store-url-example">
             <small>Adresse à saisir dans Telmi Sync</small>
-            <code>
-              {`${data.publicUrl.replace(/\/$/, "")}/store?api_key=${storeKey || "VOTRE_CLE"}`}
-            </code>
-            {storeKey && (
-              <button
-                className="ghost compact"
-                onClick={async () => {
-                  await navigator.clipboard.writeText(
-                    `${data.publicUrl.replace(/\/$/, "")}/store?api_key=${storeKey}`,
-                  );
-                  onNotice({
-                    tone: "ok",
-                    text: "Adresse du store copiée.",
-                  });
-                }}
-              >
-                <Copy /> Copier l’adresse
-              </button>
-            )}
-          </div>
-          <div className="inline-actions">
+            <code>{`${data.publicUrl.replace(/\/$/, "")}/store`}</code>
             <button
-              className="secondary"
+              className="ghost compact"
               onClick={async () => {
-                if (
-                  !window.confirm(
-                    "Générer une nouvelle clé désactivera immédiatement l’ancienne dans Telmi Sync. Continuer ?",
-                  )
-                )
-                  return;
-                const result = await api<{ storeApiKey: string }>(
-                  "/api/settings/store-key",
-                  { method: "POST", body: "{}" },
+                await navigator.clipboard.writeText(
+                  `${data.publicUrl.replace(/\/$/, "")}/store`,
                 );
-                setStoreKey(result.storeApiKey);
+                onNotice({
+                  tone: "ok",
+                  text: "Adresse du store copiée.",
+                });
               }}
             >
-              <KeyRound /> Générer une nouvelle clé
+              <Copy /> Copier l’adresse
             </button>
+          </div>
+          <div className="inline-actions">
             <a
               className="ghost link-button compact"
               href="https://wiki.telmi.fr/stores/stores_prives/"
@@ -3162,12 +3116,6 @@ function SettingsPanel({
               Guide Telmi <ExternalLink />
             </a>
           </div>
-          {storeKey && (
-            <div className="fresh-store-key">
-              <strong>Clé générée — copiez-la maintenant</strong>
-              <code className="secret-code small">{storeKey}</code>
-            </div>
-          )}
         </div>
       </section>
       <OperationsPanel api={api} onNotice={onNotice} />

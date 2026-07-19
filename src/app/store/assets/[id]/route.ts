@@ -3,14 +3,14 @@ import { and, eq, isNull } from "drizzle-orm";
 import { apiErrorResponse, ApiError } from "@/server/api/response";
 import { db } from "@/server/db";
 import { generatedAssets, stories, storyVersions } from "@/server/db/schema";
-import { requireStoreKey } from "@/server/store/auth";
+import { requireStoreEnabled } from "@/server/store/auth";
 
 export async function GET(
-  request: Request,
+  _request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    requireStoreKey(request);
+    requireStoreEnabled();
     const row = db
       .select({ asset: generatedAssets })
       .from(generatedAssets)

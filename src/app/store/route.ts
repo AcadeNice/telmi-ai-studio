@@ -2,11 +2,11 @@ import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { apiErrorResponse } from "@/server/api/response";
 import { db } from "@/server/db";
 import { generatedAssets, stories, storyVersions } from "@/server/db/schema";
-import { requireStoreKey } from "@/server/store/auth";
+import { requireStoreEnabled } from "@/server/store/auth";
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const { config, key } = requireStoreKey(request);
+    const config = requireStoreEnabled();
     const published = db
       .select({ story: stories, version: storyVersions })
       .from(stories)
@@ -48,17 +48,16 @@ export async function GET(request: Request) {
           ),
         )
         .get();
-      const withKey = (id: string) =>
-        `${origin}/store/assets/${id}?api_key=${encodeURIComponent(key)}`;
+      const assetUrl = (id: string) => `${origin}/store/assets/${id}`;
       return {
         age: story.age,
         title: story.title,
         description: story.description,
         thumbs: {
-          small: cover ? withKey(cover.id) : "",
-          medium: cover ? withKey(cover.id) : "",
+          small: cover ? assetUrl(cover.id) : "",
+          medium: cover ? assetUrl(cover.id) : "",
         },
-        download: pack ? withKey(pack.id) : "",
+        download: pack ? assetUrl(pack.id) : "",
         download_count: 0,
         awards: [],
         created_at: version.createdAt.toISOString(),

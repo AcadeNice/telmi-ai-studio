@@ -1,10 +1,10 @@
 import argon2 from "argon2";
 import { count } from "drizzle-orm";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db, ensureDatabase } from "@/server/db";
 import { admins, providerConfigurations, settings } from "@/server/db/schema";
-import { encryptSecret, hashToken } from "@/server/security/crypto";
+import { encryptSecret } from "@/server/security/crypto";
 import { createSession } from "@/server/auth/session";
 import { ApiError, apiErrorResponse, readJson } from "@/server/api/response";
 
@@ -51,7 +51,6 @@ export async function POST(request: Request) {
         "L’installation initiale est déjà terminée.",
       );
     const input = setupSchema.parse(await readJson(request));
-    const storeApiKey = randomBytes(32).toString("base64url");
     // A fixed primary key makes the bootstrap race-safe at the database level.
     const adminId = "primary";
     const now = new Date();
@@ -74,8 +73,10 @@ export async function POST(request: Request) {
           monthlyBudgetCents: input.monthlyBudgetCents,
           storyBudgetCents: input.storyBudgetCents,
           storeEnabled: true,
-          storeApiKeyHash: hashToken(storeApiKey),
-          storeApiKeyEncrypted: encryptSecret(storeApiKey),
+          // Kept empty only for compatibility with databases created before
+          // the store became directly accessible by URL.
+          storeApiKeyHash: "",
+          storeApiKeyEncrypted: "",
           createdAt: now,
           updatedAt: now,
         })
@@ -97,7 +98,7 @@ export async function POST(request: Request) {
     });
     const session = await createSession(adminId);
     return Response.json(
-      { success: true, csrfToken: session.csrfToken, storeApiKey },
+      { success: true, csrfToken: session.csrfToken },
       { status: 201 },
     );
   } catch (error) {

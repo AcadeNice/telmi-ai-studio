@@ -505,19 +505,6 @@ button {
   background: #ffe8e8;
   color: #a93f49;
 }
-.secret-code {
-  display: block;
-  word-break: break-all;
-  background: #2c2542;
-  color: #e9e2ff;
-  padding: 14px;
-  border-radius: 10px;
-  text-align: left;
-}
-.secret-code.small {
-  font-size: 11px;
-  margin-top: 10px;
-}
 .loader {
   width: 42px;
   height: 42px;
@@ -1578,24 +1565,12 @@ button {
   color: var(--muted);
   font-weight: 700;
 }
-.store-url-example code,
-.fresh-store-key code {
+.store-url-example code {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 .store-url-example .ghost {
   justify-self: start;
-}
-.fresh-store-key {
-  display: grid;
-  gap: 8px;
-  padding: 13px;
-  border: 1px solid #e5bd68;
-  border-radius: 13px;
-  background: #fff8e8;
-}
-.fresh-store-key strong {
-  color: #79510d;
 }
 .switch {
   display: flex;
