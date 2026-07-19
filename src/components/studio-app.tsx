@@ -28,6 +28,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { GraphEditor } from "./graph-editor";
+import { ART_STYLE_OPTIONS } from "@/lib/narrative/image-style";
 import type {
   CreationParameters,
   NarrativeChoice,
@@ -136,6 +137,7 @@ const initialParameters: CreationParameters = {
   explicitMoral: false,
   illustrationMode: "choices",
   voiceMode: "single",
+  artStylePreset: "watercolor",
   author: "Telmi AI Studio",
 };
 
@@ -744,6 +746,9 @@ function CreationWizard({
   const [params, setParams] = useState<CreationParameters>(() => ({
     ...initialParameters,
     ...(savedParameters ?? {}),
+    artStylePreset:
+      savedParameters?.artStylePreset ??
+      (savedParameters?.artDirection ? "custom" : "watercolor"),
   }));
   const [title, setTitle] = useState(
     existingStory?.title ?? "L’aventure de Mila",
@@ -965,22 +970,46 @@ function CreationWizard({
                   }
                 />
               </Field>
-              <Field label="Direction artistique (facultatif)">
-                <textarea
-                  value={params.artDirection ?? ""}
-                  placeholder="Ex. : aquarelle douce, couleurs pastel, forêt lumineuse, ambiance féerique…"
-                  onChange={(event) =>
+              <Field label="Style graphique">
+                <select
+                  value={params.artStylePreset}
+                  onChange={(event) => {
+                    const artStylePreset = event.target
+                      .value as CreationParameters["artStylePreset"];
                     setParams({
                       ...params,
-                      artDirection: event.target.value || undefined,
-                    })
-                  }
-                />
+                      artStylePreset,
+                      artDirection:
+                        artStylePreset === "custom"
+                          ? params.artDirection
+                          : undefined,
+                    });
+                  }}
+                >
+                  {ART_STYLE_OPTIONS.map((style) => (
+                    <option key={style.value} value={style.value}>
+                      {style.label}
+                    </option>
+                  ))}
+                </select>
+                {params.artStylePreset === "custom" && (
+                  <textarea
+                    value={params.artDirection ?? ""}
+                    placeholder="Décrivez précisément le rendu souhaité : matières, palette, lumière, contours, ambiance…"
+                    onChange={(event) =>
+                      setParams({
+                        ...params,
+                        artDirection: event.target.value || undefined,
+                      })
+                    }
+                  />
+                )}
               </Field>
             </div>
             <p className="field-help">
-              Les éléments imposés guident le récit. La direction artistique
-              guide surtout les illustrations et les prompts d’image.
+              Les éléments imposés guident le récit. Le style sélectionné et le
+              contexte visuel seront repris dans toutes les illustrations pour
+              conserver les mêmes personnages, couleurs et détails.
             </p>
           </>
         )}

@@ -1,5 +1,16 @@
 import { z } from "zod";
 
+export const artStylePresetSchema = z.enum([
+  "watercolor",
+  "gouache",
+  "colored-pencil",
+  "paper-cut",
+  "clay-3d",
+  "flat-vector",
+  "soft-anime",
+  "custom",
+]);
+
 export const creationParametersSchema = z.object({
   childName: z.string().trim().min(1).max(80),
   age: z.number().int().min(2).max(12),
@@ -8,6 +19,7 @@ export const creationParametersSchema = z.object({
   universe: z.string().trim().min(1).max(160),
   value: z.string().trim().min(1).max(120),
   requiredStoryElements: z.string().trim().max(2_000).optional(),
+  artStylePreset: artStylePresetSchema.default("watercolor"),
   artDirection: z.string().trim().max(2_000).optional(),
   decisionCount: z.number().int().min(1).max(8).default(3),
   choicesPerDecision: z.number().int().min(2).max(5).default(2),

@@ -12,6 +12,8 @@ import {
   coverImagePrompt,
   noTextImagePrompt,
 } from "@/lib/narrative/choice-labels";
+import { buildStoryVisualContext } from "@/lib/narrative/image-style";
+import type { CreationParameters } from "@/lib/narrative/schema";
 import { db, ensureDatabase } from "@/server/db";
 import { generatedAssets, stories, storyVersions } from "@/server/db/schema";
 import { recordUsage } from "@/server/jobs/service";
@@ -62,33 +64,22 @@ function parseMetadata(value: string | null): AssetMetadata {
   }
 }
 
-function artDirection(parameters: { artDirection?: string }) {
-  return parameters.artDirection?.trim()
-    ? ` Direction artistique impérative : ${parameters.artDirection.trim()}.`
-    : "";
-}
-
 function derivedAssetMetadata(
   context: VersionContext,
   asset: typeof generatedAssets.$inferSelect,
 ): AssetMetadata {
   const narrative = loadNarrative(context.version.id);
-  const parameters = JSON.parse(context.version.parametersJson) as {
-    defaultVoiceId?: string;
-    artDirection?: string;
-    childName?: string;
-  };
+  const parameters = JSON.parse(
+    context.version.parametersJson,
+  ) as CreationParameters;
   if (!narrative) return {};
+  const visualContext = buildStoryVisualContext(narrative, parameters);
   const existing = parseMetadata(asset.metadataJson);
   if (asset.type === "cover")
     return {
       prompt:
         existing.prompt ??
-        coverImagePrompt(
-          narrative,
-          artDirection(parameters),
-          parameters.childName,
-        ),
+        coverImagePrompt(narrative, visualContext, parameters.childName),
       label: existing.label ?? "Couverture",
       source: existing.source ?? "generated",
       ...existing,
@@ -118,7 +109,7 @@ function derivedAssetMetadata(
         choiceImagePrompt(
           narrative,
           choice,
-          artDirection(parameters),
+          visualContext,
           parameters.childName,
         ),
       label: `Choix : ${choiceDisplayLabel(narrative, choice)}`,
@@ -130,7 +121,7 @@ function derivedAssetMetadata(
         existing.prompt ??
         noTextImagePrompt(
           scene.imagePrompt ?? scene.text,
-          artDirection(parameters),
+          visualContext,
           parameters.childName,
         ),
       label: existing.label ?? scene.title,

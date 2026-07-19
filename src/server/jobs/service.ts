@@ -13,6 +13,8 @@ import {
   coverImagePrompt,
   noTextImagePrompt,
 } from "@/lib/narrative/choice-labels";
+import { buildStoryVisualContext } from "@/lib/narrative/image-style";
+import type { CreationParameters } from "@/lib/narrative/schema";
 import { db, ensureDatabase } from "@/server/db";
 import {
   generatedAssets,
@@ -494,20 +496,14 @@ async function runTts(jobId: string) {
 async function runImages(jobId: string) {
   const { story, version } = jobContext(jobId);
   const narrative = loadNarrative(version.id)!;
-  const parameters = JSON.parse(version.parametersJson) as {
-    illustrationMode?: "cover" | "choices" | "every-scene";
-    artDirection?: string;
-    childName?: string;
-  };
+  const parameters = JSON.parse(version.parametersJson) as CreationParameters;
   const illustrationMode = parameters.illustrationMode ?? "choices";
-  const artDirection = parameters.artDirection?.trim()
-    ? ` Direction artistique impérative : ${parameters.artDirection.trim()}.`
-    : "";
+  const visualContext = buildStoryVisualContext(narrative, parameters);
   const base = path.join(versionDirectory(story.id, version.version), "assets");
   const imageDir = path.join(base, "images");
   const coverPrompt = coverImagePrompt(
     narrative,
-    artDirection,
+    visualContext,
     parameters.childName,
   );
   await generateImage(coverPrompt, path.join(base, "cover.png"));
@@ -545,7 +541,7 @@ async function runImages(jobId: string) {
     const file = path.join(imageDir, `s${index + 1}.png`);
     const prompt = noTextImagePrompt(
       scene.imagePrompt,
-      artDirection,
+      visualContext,
       parameters.childName,
     );
     await generateImage(prompt, file);
@@ -569,7 +565,7 @@ async function runImages(jobId: string) {
     const prompt = choiceImagePrompt(
       narrative,
       choice,
-      artDirection,
+      visualContext,
       parameters.childName,
     );
     await generateImage(prompt, file);

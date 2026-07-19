@@ -32,7 +32,9 @@ export function noTextImagePrompt(
   const description = removeChildName(visualDescription, childName)
     .trim()
     .replace(/[.\s]+$/, "");
-  const direction = artDirection.trim().replace(/[.\s]+$/, "");
+  const direction = removeChildName(artDirection, childName)
+    .trim()
+    .replace(/[.\s]+$/, "");
   return [description, direction, noTextRequirement]
     .filter(Boolean)
     .map((part) => `${part.replace(/[.\s]+$/, "")}.`)
