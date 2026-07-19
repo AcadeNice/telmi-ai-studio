@@ -21,6 +21,7 @@ export const creationParametersSchema = z.object({
   defaultVoiceId: z.string().trim().min(1).optional(),
   defaultVoiceName: z.string().trim().min(1).max(160).optional(),
   author: z.string().trim().min(1).max(160).optional(),
+  graphLayoutSaved: z.boolean().optional(),
   preservedSceneIds: z
     .array(z.string().trim().min(1).max(64))
     .max(200)
@@ -122,13 +123,7 @@ export const narrativeJsonSchema = {
             targetSceneId: { type: "string" },
             order: { type: "integer" },
           },
-          required: [
-            "id",
-            "sourceSceneId",
-            "label",
-            "targetSceneId",
-            "order",
-          ],
+          required: ["id", "sourceSceneId", "label", "targetSceneId", "order"],
         },
       },
     },

@@ -1563,6 +1563,7 @@ function StoryStudio({
   const [refinementInstruction, setRefinementInstruction] = useState("");
   const [preservedSceneIds, setPreservedSceneIds] = useState<string[]>([]);
   const [preservedChoiceIds, setPreservedChoiceIds] = useState<string[]>([]);
+  const [graphLayoutSaved, setGraphLayoutSaved] = useState(false);
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
   const [budgetConfirmation, setBudgetConfirmation] = useState<{
     details: string[];
@@ -1581,12 +1582,14 @@ function StoryStudio({
       const data = await api<{
         narrative: NarrativeStory;
         validation: typeof validation;
+        graphLayoutSaved: boolean;
         preservedSceneIds: string[];
         preservedChoiceIds: string[];
       }>(`/api/stories/${story.id}/versions/${version.id}/narrative`);
       setNarrative(data.narrative);
       setJson(JSON.stringify(data.narrative, null, 2));
       setValidation(data.validation);
+      setGraphLayoutSaved(data.graphLayoutSaved ?? false);
       setPreservedSceneIds(data.preservedSceneIds ?? []);
       setPreservedChoiceIds(data.preservedChoiceIds ?? []);
     } catch {
@@ -1766,6 +1769,7 @@ function StoryStudio({
       setNarrative(result.narrative);
       setJson(JSON.stringify(result.narrative, null, 2));
       setValidation(result.validation);
+      setGraphLayoutSaved(false);
       setRefinementInstruction("");
       onNotice({
         tone: "ok",
@@ -2088,6 +2092,41 @@ function StoryStudio({
           {tab === "graph" && (
             <GraphEditor
               narrative={narrative}
+              savedLayout={graphLayoutSaved}
+              onSaveLayout={async (positions) => {
+                try {
+                  await api(
+                    `/api/stories/${story.id}/versions/${version.id}/narrative`,
+                    {
+                      method: "PATCH",
+                      body: JSON.stringify({ positions }),
+                    },
+                  );
+                  const positionsById = new Map(
+                    positions.map((item) => [item.id, item.position]),
+                  );
+                  const nextNarrative = {
+                    ...narrative,
+                    scenes: narrative.scenes.map((scene) => ({
+                      ...scene,
+                      position: positionsById.get(scene.id) ?? scene.position,
+                    })),
+                  };
+                  setNarrative(nextNarrative);
+                  setJson(JSON.stringify(nextNarrative, null, 2));
+                  setGraphLayoutSaved(true);
+                  onNotice({
+                    tone: "ok",
+                    text: "La disposition du graphe est enregistrée.",
+                  });
+                } catch (error) {
+                  onNotice({
+                    tone: "error",
+                    text: "Impossible d’enregistrer la disposition du graphe.",
+                  });
+                  throw error;
+                }
+              }}
               onSceneSelect={
                 version.status === "draft"
                   ? (sceneId) => {

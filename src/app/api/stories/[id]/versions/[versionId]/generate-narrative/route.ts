@@ -96,7 +96,14 @@ export async function POST(
       })
       .run();
     db.update(storyVersions)
-      .set({ actualCostCents: estimatedCostCents, updatedAt: new Date() })
+      .set({
+        actualCostCents: estimatedCostCents,
+        parametersJson: JSON.stringify({
+          ...parameters,
+          graphLayoutSaved: false,
+        }),
+        updatedAt: new Date(),
+      })
       .where(eq(storyVersions.id, versionId))
       .run();
     db.update(stories)

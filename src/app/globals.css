@@ -1245,18 +1245,58 @@ button {
   justify-content: flex-end;
   gap: 10px;
 }
+.graph-editor {
+  display: grid;
+  gap: 12px;
+}
+.graph-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 16px;
+  border: 1px solid #ded6ef;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #fbf9ff, #fffaf3);
+}
+.graph-toolbar > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+.graph-toolbar strong {
+  color: var(--ink);
+}
+.graph-toolbar small {
+  color: var(--muted);
+}
+.graph-toolbar .inline-actions {
+  margin: 0;
+}
+.graph-toolbar button {
+  min-height: 38px;
+  padding: 8px 13px;
+}
+.graph-toolbar button svg {
+  width: 16px;
+  height: 16px;
+}
 .graph-canvas {
-  height: 620px;
+  height: 720px;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 18px;
   overflow: hidden;
 }
 .flow-node {
-  padding: 12px !important;
+  padding: 15px !important;
   border: 1px solid #d9d1eb !important;
   border-radius: 12px !important;
-  width: 180px !important;
+  width: 220px !important;
+  cursor: grab !important;
+  box-shadow: 0 8px 24px rgb(48 35 72 / 9%) !important;
+}
+.flow-node:active {
+  cursor: grabbing !important;
 }
 .flow-node small {
   display: block;
@@ -1711,7 +1751,15 @@ button {
     justify-content: center;
   }
   .graph-canvas {
-    height: 500px;
+    height: 560px;
+  }
+  .graph-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .graph-toolbar .inline-actions,
+  .graph-toolbar button {
+    width: 100%;
   }
   .studio-actions {
     width: 100%;

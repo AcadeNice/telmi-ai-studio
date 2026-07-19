@@ -1,4 +1,5 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 import {
   creationParametersSchema,
   narrativeStorySchema,
@@ -9,7 +10,7 @@ import { validateNarrativeGraph } from "@/lib/narrative/validator";
 import { requireMutationSession, requireSession } from "@/server/auth/session";
 import { ApiError, apiErrorResponse, readJson } from "@/server/api/response";
 import { db } from "@/server/db";
-import { storyVersions } from "@/server/db/schema";
+import { scenes, storyVersions } from "@/server/db/schema";
 import { loadNarrative, saveNarrative } from "@/server/stories/service";
 
 export async function GET(
@@ -35,6 +36,7 @@ export async function GET(
     return Response.json({
       narrative,
       validation: validateNarrativeGraph(narrative),
+      graphLayoutSaved: creationParameters.graphLayoutSaved ?? false,
       preservedSceneIds: creationParameters.preservedSceneIds ?? [],
       preservedChoiceIds: creationParameters.preservedChoiceIds ?? [],
     });
@@ -119,6 +121,91 @@ export async function PUT(
       preservedSceneIds,
       preservedChoiceIds,
     });
+  } catch (error) {
+    return apiErrorResponse(error);
+  }
+}
+
+const layoutSchema = z.object({
+  positions: z
+    .array(
+      z.object({
+        id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
+        position: z.object({
+          x: z.number().finite().min(-100_000).max(100_000),
+          y: z.number().finite().min(-100_000).max(100_000),
+        }),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string; versionId: string }> },
+) {
+  try {
+    await requireMutationSession(request);
+    const { id, versionId } = await params;
+    const version = db
+      .select()
+      .from(storyVersions)
+      .where(
+        and(eq(storyVersions.id, versionId), eq(storyVersions.storyId, id)),
+      )
+      .get();
+    if (!version) throw new ApiError(404, "NOT_FOUND", "Version introuvable.");
+
+    const input = layoutSchema.parse(await readJson(request));
+    const sceneRows = db
+      .select({ id: scenes.id, key: scenes.key })
+      .from(scenes)
+      .where(eq(scenes.versionId, versionId))
+      .all();
+    const positionsByKey = new Map(
+      input.positions.map((item) => [item.id, item.position]),
+    );
+    if (
+      positionsByKey.size !== input.positions.length ||
+      sceneRows.length !== positionsByKey.size ||
+      sceneRows.some((scene) => !positionsByKey.has(scene.key))
+    )
+      throw new ApiError(
+        400,
+        "INVALID_LAYOUT",
+        "La disposition doit contenir exactement toutes les scènes du scénario.",
+      );
+
+    const now = new Date();
+    const creationParameters = creationParametersSchema.parse(
+      JSON.parse(version.parametersJson),
+    );
+    db.transaction((tx) => {
+      for (const scene of sceneRows) {
+        const position = positionsByKey.get(scene.key)!;
+        tx.update(scenes)
+          .set({
+            positionX: position.x,
+            positionY: position.y,
+            updatedAt: now,
+          })
+          .where(eq(scenes.id, scene.id))
+          .run();
+      }
+      tx.update(storyVersions)
+        .set({
+          parametersJson: JSON.stringify({
+            ...creationParameters,
+            graphLayoutSaved: true,
+          }),
+          updatedAt: now,
+        })
+        .where(eq(storyVersions.id, versionId))
+        .run();
+    });
+
+    return Response.json({ success: true, positions: input.positions });
   } catch (error) {
     return apiErrorResponse(error);
   }
