@@ -10,6 +10,8 @@ import { validateNarrativeGraph } from "@/lib/narrative/validator";
 import {
   choiceDisplayLabel,
   choiceImagePrompt,
+  coverImagePrompt,
+  noTextImagePrompt,
 } from "@/lib/narrative/choice-labels";
 import { db, ensureDatabase } from "@/server/db";
 import {
@@ -502,7 +504,7 @@ async function runImages(jobId: string) {
     : "";
   const base = path.join(versionDirectory(story.id, version.version), "assets");
   const imageDir = path.join(base, "images");
-  const coverPrompt = `Illustration jeunesse douce, sans texte, couverture pour ${narrative.title}. ${narrative.description}${artDirection}`;
+  const coverPrompt = coverImagePrompt(narrative, artDirection);
   await generateImage(coverPrompt, path.join(base, "cover.png"));
   await fs.copyFile(path.join(base, "cover.png"), path.join(base, "title.png"));
   await recordAsset(
@@ -536,7 +538,7 @@ async function runImages(jobId: string) {
     if (illustrationMode !== "every-scene") continue;
     if (!scene.imagePrompt) continue;
     const file = path.join(imageDir, `s${index + 1}.png`);
-    const prompt = `${scene.imagePrompt}${artDirection}`;
+    const prompt = noTextImagePrompt(scene.imagePrompt, artDirection);
     await generateImage(prompt, file);
     await recordAsset(
       version.id,

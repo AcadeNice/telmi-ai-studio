@@ -45,8 +45,10 @@ describe("choice labels used by media and graph views", () => {
 
   it("gives image generation enough context to distinguish merged branches", () => {
     const prompt = choiceImagePrompt(narrative, narrative.choices[0]!);
-    expect(prompt).toContain("La forêt");
-    expect(prompt).toContain("Les retrouvailles");
-    expect(prompt).toContain("Sans texte");
+    expect(prompt).toContain("Avance");
+    expect(prompt).toContain("Fin");
+    expect(prompt).toContain("Aucun texte");
+    expect(prompt).not.toContain("«");
+    expect(prompt).not.toContain("Continuer");
   });
 });

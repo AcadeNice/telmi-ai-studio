@@ -1,5 +1,27 @@
 import type { NarrativeChoice, NarrativeStory } from "./schema";
 
+const noTextRequirement =
+  "Image exclusivement visuelle. Aucun texte, mot, lettre, chiffre, titre, logo, signature, filigrane, pancarte, affiche, enseigne, livre ou symbole ressemblant à de l’écriture.";
+
+export function noTextImagePrompt(
+  visualDescription: string,
+  artDirection = "",
+) {
+  const description = visualDescription.trim().replace(/[.\s]+$/, "");
+  const direction = artDirection.trim().replace(/[.\s]+$/, "");
+  return [description, direction, noTextRequirement]
+    .filter(Boolean)
+    .map((part) => `${part.replace(/[.\s]+$/, "")}.`)
+    .join(" ");
+}
+
+export function coverImagePrompt(narrative: NarrativeStory, artDirection = "") {
+  return noTextImagePrompt(
+    `Illustration de couverture jeunesse douce et colorée au format horizontal 4:3. Représenter visuellement cette histoire sans afficher son titre : ${narrative.description}`,
+    artDirection,
+  );
+}
+
 export function normalizeChoiceLabel(label: string) {
   return label
     .normalize("NFD")
@@ -35,11 +57,18 @@ export function choiceImagePrompt(
   const target = narrative.scenes.find(
     (scene) => scene.id === choice.targetSceneId,
   );
-  const context = [
-    source ? `après « ${source.title} »` : null,
-    target ? `vers « ${target.title} »` : null,
+  const sourceDescription = source?.imagePrompt ?? source?.text;
+  const targetDescription = target?.imagePrompt ?? target?.text;
+  const visualDescription = [
+    "Illustration jeunesse douce, colorée et distincte au format horizontal 4:3",
+    sourceDescription
+      ? `Faire partir la scène de cette situation visuelle : ${sourceDescription}`
+      : null,
+    targetDescription
+      ? `Montrer principalement le résultat visuel suivant : ${targetDescription}`
+      : null,
   ]
     .filter(Boolean)
-    .join(" et ");
-  return `Illustration jeunesse simple et distincte représentant le choix « ${choice.label} »${context ? `, ${context}` : ""}. Sans texte.${artDirection}`;
+    .join(". ");
+  return noTextImagePrompt(visualDescription, artDirection);
 }

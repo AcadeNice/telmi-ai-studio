@@ -9,6 +9,8 @@ import { expectedMedia, mediaKey } from "@/lib/media/review";
 import {
   choiceDisplayLabel,
   choiceImagePrompt,
+  coverImagePrompt,
+  noTextImagePrompt,
 } from "@/lib/narrative/choice-labels";
 import { db, ensureDatabase } from "@/server/db";
 import { generatedAssets, stories, storyVersions } from "@/server/db/schema";
@@ -81,7 +83,7 @@ function derivedAssetMetadata(
     return {
       prompt:
         existing.prompt ??
-        `Illustration jeunesse douce, sans texte, couverture pour ${narrative.title}. ${narrative.description}${artDirection(parameters)}`,
+        coverImagePrompt(narrative, artDirection(parameters)),
       label: existing.label ?? "Couverture",
       source: existing.source ?? "generated",
       ...existing,
@@ -116,7 +118,10 @@ function derivedAssetMetadata(
     return {
       prompt:
         existing.prompt ??
-        `${scene.imagePrompt ?? ""}${artDirection(parameters)}`,
+        noTextImagePrompt(
+          scene.imagePrompt ?? scene.text,
+          artDirection(parameters),
+        ),
       label: existing.label ?? scene.title,
       source: existing.source ?? "generated",
       ...existing,
