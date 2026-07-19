@@ -975,16 +975,27 @@ button {
   gap: 6px;
   cursor: pointer;
 }
-.upload-button.disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
+.media-upload-control {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
 }
-.upload-button input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
+.media-upload-control small {
+  color: #756d84;
+  font-size: 10px;
+  line-height: 1.25;
+}
+.media-file-input {
+  display: none;
+}
+.media-published-warning {
+  margin: 14px 0 18px;
+  padding: 11px 13px;
+  border: 1px solid #f4c76e;
+  border-radius: 12px;
+  background: #fff8e8;
+  color: #71531c;
+  font-size: 13px;
 }
 .audio-heading {
   margin-top: 4px;

@@ -6,6 +6,10 @@ import { promisify } from "node:util";
 import sharp from "sharp";
 import { ApiError } from "@/server/api/response";
 import { expectedMedia, mediaKey } from "@/lib/media/review";
+import {
+  choiceDisplayLabel,
+  choiceImagePrompt,
+} from "@/lib/narrative/choice-labels";
 import { db, ensureDatabase } from "@/server/db";
 import { generatedAssets, stories, storyVersions } from "@/server/db/schema";
 import { recordUsage } from "@/server/jobs/service";
@@ -101,12 +105,12 @@ function derivedAssetMetadata(
     : null;
   if (asset.type === "image" && choice)
     return {
+      ...existing,
       prompt:
         existing.prompt ??
-        `Illustration jeunesse simple représentant ce choix : ${choice.label}. Sans texte.${artDirection(parameters)}`,
-      label: existing.label ?? `Choix : ${choice.label}`,
+        choiceImagePrompt(narrative, choice, artDirection(parameters)),
+      label: `Choix : ${choiceDisplayLabel(narrative, choice)}`,
       source: existing.source ?? "generated",
-      ...existing,
     };
   if (asset.type === "image" && scene)
     return {
@@ -119,11 +123,11 @@ function derivedAssetMetadata(
     };
   if (asset.type === "audio" && choice)
     return {
+      ...existing,
       text: existing.text ?? choice.label,
       voiceId: existing.voiceId ?? parameters.defaultVoiceId,
-      label: existing.label ?? `Choix : ${choice.label}`,
+      label: `Choix : ${choiceDisplayLabel(narrative, choice)}`,
       source: existing.source ?? "generated",
-      ...existing,
     };
   if (asset.type === "audio" && scene)
     return {

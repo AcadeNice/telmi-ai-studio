@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArchiveRestore,
   Bell,
@@ -226,6 +226,17 @@ export function StudioApp() {
   useEffect(() => {
     if (boot === "ready") queueMicrotask(() => void refresh());
   }, [boot, refresh]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const displayedNotice = notice;
+    const timer = window.setTimeout(
+      () =>
+        setNotice((current) => (current === displayedNotice ? null : current)),
+      notice.tone === "error" ? 8_000 : 5_000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   if (boot === "loading") return <Splash />;
   if (boot === "setup")
@@ -2214,7 +2225,24 @@ function MediaReviewPanel({
   const audios = review.list.filter((asset) =>
     ["title_audio", "audio"].includes(asset.type),
   );
-  const locked = review.readOnly || version.status === "generating";
+  const published = version.status === "published";
+  const locked =
+    (review.readOnly && !published) || version.status === "generating";
+
+  const prepareMediaEdit = async () => {
+    if (!published) return true;
+    if (
+      !window.confirm(
+        "Cette histoire est publiée. La modification va la retirer du store et supprimer le ZIP actuel. Vous pourrez la republier après avoir vérifié les médias. Continuer ?",
+      )
+    )
+      return false;
+    await api(`/api/stories/${storyId}/versions/${version.id}/publish`, {
+      method: "DELETE",
+      body: "{}",
+    });
+    return true;
+  };
 
   const regenerate = async (
     asset: MediaReviewAsset,
@@ -2222,6 +2250,7 @@ function MediaReviewPanel({
   ) => {
     onBusy(`regenerate:${asset.id}`);
     try {
+      if (!(await prepareMediaEdit())) return;
       onChange(
         await api<MediaReview>(
           `/api/stories/${storyId}/versions/${version.id}/media/${asset.id}/regenerate`,
@@ -2246,6 +2275,7 @@ function MediaReviewPanel({
   const upload = async (asset: MediaReviewAsset, file: File) => {
     onBusy(`upload:${asset.id}`);
     try {
+      if (!(await prepareMediaEdit())) return;
       const body = new FormData();
       body.set("file", file);
       onChange(
@@ -2306,6 +2336,14 @@ function MediaReviewPanel({
           {review.generatedCount}/{review.expectedCount} prêts
         </span>
       </div>
+
+      {published && (
+        <div className="media-published-warning">
+          Cette version est actuellement dans le store. Au premier média
+          modifié, elle sera retirée automatiquement après votre confirmation,
+          puis vous pourrez recréer et republier le ZIP.
+        </div>
+      )}
 
       <div className="media-section-heading">
         <ImageIcon />
@@ -2391,6 +2429,7 @@ function MediaImageCard({
   onUpload: (file: File) => Promise<void>;
 }) {
   const [prompt, setPrompt] = useState(asset.prompt ?? "");
+  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <article className="media-image-card">
       <div className="media-preview">
@@ -2417,13 +2456,21 @@ function MediaImageCard({
           >
             <RotateCcw /> {busy ? "Traitement…" : "Régénérer"}
           </button>
-          <label
-            className={`ghost compact upload-button ${disabled ? "disabled" : ""}`}
-          >
-            <Upload /> Envoyer une image
+          <div className="media-upload-control">
+            <button
+              type="button"
+              className="ghost compact upload-button"
+              disabled={disabled}
+              onClick={() => inputRef.current?.click()}
+            >
+              <Upload /> Envoyer une image
+            </button>
+            <small>PNG, JPEG ou WebP · recadré en 640 × 480 (4:3)</small>
             <input
+              ref={inputRef}
+              className="media-file-input"
               type="file"
-              accept="image/png,image/jpeg,image/webp"
+              accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
               disabled={disabled}
               onChange={(event) => {
                 const file = event.target.files?.[0];
@@ -2431,7 +2478,7 @@ function MediaImageCard({
                 event.target.value = "";
               }}
             />
-          </label>
+          </div>
         </div>
       </div>
     </article>
@@ -2451,6 +2498,7 @@ function MediaAudioCard({
   onRegenerate: () => Promise<void>;
   onUpload: (file: File) => Promise<void>;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <article className="media-audio-card">
       <div className="audio-card-copy">
@@ -2479,11 +2527,19 @@ function MediaAudioCard({
         >
           <RotateCcw /> {busy ? "Traitement…" : "Régénérer"}
         </button>
-        <label
-          className={`ghost compact upload-button ${disabled ? "disabled" : ""}`}
-        >
-          <Upload /> Envoyer un audio
+        <div className="media-upload-control">
+          <button
+            type="button"
+            className="ghost compact upload-button"
+            disabled={disabled}
+            onClick={() => inputRef.current?.click()}
+          >
+            <Upload /> Envoyer un audio
+          </button>
+          <small>MP3, WAV, M4A ou OGG · converti en MP3 44,1 kHz</small>
           <input
+            ref={inputRef}
+            className="media-file-input"
             type="file"
             accept="audio/*,.mp3,.wav,.m4a,.ogg"
             disabled={disabled}
@@ -2493,7 +2549,7 @@ function MediaAudioCard({
               event.target.value = "";
             }}
           />
-        </label>
+        </div>
       </div>
     </article>
   );

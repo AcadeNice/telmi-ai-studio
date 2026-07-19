@@ -128,6 +128,29 @@ describe("narrative graph", () => {
     ).toBe(true);
   });
 
+  it("rejects choice labels repeated in different parts of the story", () => {
+    const story = structuredClone(validStory);
+    story.scenes.push({
+      id: "suite",
+      type: "narrative",
+      title: "La suite",
+      text: "Mila poursuit son aventure.",
+    });
+    story.choices.push({
+      id: "c3",
+      sourceSceneId: "suite",
+      label: "  PÀRTAGER ! ",
+      targetSceneId: "chemin",
+      order: 0,
+    });
+
+    expect(
+      validateNarrativeGraph(story).issues.some(
+        (issue) => issue.code === "DUPLICATE_CHOICE_LABEL",
+      ),
+    ).toBe(true);
+  });
+
   it("normalizes scene types from their outgoing transitions", () => {
     const story = structuredClone(validStory);
     story.scenes[0]!.type = "narrative";

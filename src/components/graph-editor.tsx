@@ -19,6 +19,7 @@ import {
   type ScenePosition,
 } from "@/lib/narrative/layout";
 import type { NarrativeStory } from "@/lib/narrative/schema";
+import { choiceDisplayLabel } from "@/lib/narrative/choice-labels";
 
 type LayoutPosition = { id: string; position: ScenePosition };
 
@@ -75,12 +76,12 @@ export function GraphEditor({
         id: choice.id,
         source: choice.sourceSceneId,
         target: choice.targetSceneId,
-        label: choice.label,
+        label: choiceDisplayLabel(narrative, choice),
         type: "smoothstep",
         markerEnd: { type: MarkerType.ArrowClosed },
         animated: true,
       })),
-    [narrative.choices],
+    [narrative],
   );
 
   useEffect(() => {

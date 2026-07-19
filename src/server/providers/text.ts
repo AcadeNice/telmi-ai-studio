@@ -22,6 +22,7 @@ Règles structurelles obligatoires :
 - une scène ending ne possède aucun choix sortant ;
 - une scène narrative possède exactement une transition sortante ;
 - une scène choice possède au moins deux choix sortants ;
+- chaque libellé de choix est unique dans toute l'histoire, précis et lié à la scène ; ne jamais répéter un libellé générique comme « Continuer », « Continuer le chemin » ou « Poursuivre » ;
 - les destinations existent et l'ordre des choix d'une scène est unique, en commençant à 0.
 Les transitions figurent uniquement dans le tableau choices.`;
 
@@ -48,12 +49,16 @@ export function preserveNarrativeEdits(
   if (!current) return generated;
   const lockedSceneIds = new Set(preserveSceneIds);
   const lockedChoiceIds = new Set(preserveChoiceIds);
-  const currentScenes = new Map(current.scenes.map((scene) => [scene.id, scene]));
+  const currentScenes = new Map(
+    current.scenes.map((scene) => [scene.id, scene]),
+  );
   const currentChoices = new Map(
     current.choices.map((choice) => [choice.id, choice]),
   );
   const presentSceneIds = new Set(generated.scenes.map((scene) => scene.id));
-  const presentChoiceIds = new Set(generated.choices.map((choice) => choice.id));
+  const presentChoiceIds = new Set(
+    generated.choices.map((choice) => choice.id),
+  );
 
   return {
     ...generated,

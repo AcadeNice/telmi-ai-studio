@@ -7,6 +7,10 @@ import {
   validateTelmiDocuments,
 } from "@/lib/telmi/compiler";
 import { validateNarrativeGraph } from "@/lib/narrative/validator";
+import {
+  choiceDisplayLabel,
+  choiceImagePrompt,
+} from "@/lib/narrative/choice-labels";
 import { db, ensureDatabase } from "@/server/db";
 import {
   generatedAssets,
@@ -468,7 +472,7 @@ async function runTts(jobId: string) {
         {
           text: choice.label,
           voiceId: parameters.defaultVoiceId,
-          label: `Choix : ${choice.label}`,
+          label: `Choix : ${choiceDisplayLabel(narrative, choice)}`,
           source: "generated",
         },
       ),
@@ -551,7 +555,7 @@ async function runImages(jobId: string) {
   for (const choice of narrative.choices) {
     if (illustrationMode === "cover") break;
     const file = path.join(imageDir, `choice_${safeFileName(choice.id)}.png`);
-    const prompt = `Illustration jeunesse simple représentant ce choix : ${choice.label}. Sans texte.${artDirection}`;
+    const prompt = choiceImagePrompt(narrative, choice, artDirection);
     await generateImage(prompt, file);
     await recordAsset(
       version.id,
@@ -562,7 +566,7 @@ async function runImages(jobId: string) {
       "image/png",
       {
         prompt,
-        label: `Choix : ${choice.label}`,
+        label: `Choix : ${choiceDisplayLabel(narrative, choice)}`,
         source: "generated",
       },
     );
