@@ -121,6 +121,7 @@ export const storyVersions = sqliteTable(
     rawResponseJson: text("raw_response_json"),
     startSceneKey: text("start_scene_key"),
     validatedAt: integer("validated_at", { mode: "timestamp_ms" }),
+    mediaReviewedAt: integer("media_reviewed_at", { mode: "timestamp_ms" }),
     publishedAt: integer("published_at", { mode: "timestamp_ms" }),
     estimatedCostCents: integer("estimated_cost_cents").notNull().default(0),
     actualCostCents: integer("actual_cost_cents").notNull().default(0),

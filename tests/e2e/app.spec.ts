@@ -269,9 +269,7 @@ test("un dépassement de budget demande une confirmation détaillée", async ({
 
   await authenticate(page);
   await page.getByRole("heading", { name: story.title }).click();
-  await page
-    .getByRole("button", { name: "Générer les médias & le ZIP" })
-    .click();
+  await page.getByRole("button", { name: "Générer les médias" }).click();
   await expect(
     page.getByRole("heading", {
       name: "Confirmer le dépassement du budget",
@@ -280,4 +278,186 @@ test("un dépassement de budget demande une confirmation détaillée", async ({
   await expect(page.getByText("0,59 € sur un plafond de 0,50 €")).toBeVisible();
   await page.getByRole("button", { name: "Confirmer et générer" }).click();
   await expect.poll(() => overrideConfirmed).toBe(true);
+});
+
+test("les médias sont prévisualisés et validés avant le ZIP", async ({
+  page,
+}) => {
+  const storyId = "media-story";
+  const versionId = "22222222-2222-4222-8222-222222222222";
+  const story = {
+    id: storyId,
+    uuid: "ffffff-media-story",
+    title: "La revue des médias",
+    description: "Images et narrations à vérifier",
+    age: 4,
+    versions: [
+      {
+        id: versionId,
+        version: 1,
+        status: "validated",
+        parametersJson: "{}",
+        estimatedCostCents: 10,
+        actualCostCents: 5,
+      },
+    ],
+    assets: [
+      { id: "image-1", type: "cover" },
+      { id: "audio-1", type: "title_audio" },
+    ],
+    latestJob: {
+      id: "media-job",
+      status: "completed",
+      progress: 100,
+      currentStep: "images",
+    },
+  };
+  const narrative = {
+    schemaVersion: "1.0",
+    title: story.title,
+    description: story.description,
+    age: 4,
+    targetDurationSeconds: 120,
+    startSceneId: "intro",
+    scenes: [
+      {
+        id: "intro",
+        type: "ending",
+        title: "Introduction",
+        text: "Mila trouve une étoile.",
+      },
+    ],
+    choices: [],
+  };
+  const mediaReview = {
+    complete: true,
+    expectedCount: 2,
+    generatedCount: 2,
+    readOnly: false,
+    reviewedAt: null,
+    list: [
+      {
+        id: "image-1",
+        type: "cover",
+        sceneKey: null,
+        provider: "openrouter",
+        mimeType: "image/png",
+        bytes: 1200,
+        label: "Couverture",
+        prompt: "Une étoile brillante dans une forêt douce",
+        source: "generated",
+        contentUrl: "/api/media-assets/image-1/content?v=1",
+      },
+      {
+        id: "audio-1",
+        type: "title_audio",
+        sceneKey: null,
+        provider: "elevenlabs",
+        mimeType: "audio/mpeg",
+        bytes: 2400,
+        label: "Titre de l’histoire",
+        text: story.title,
+        voiceId: "voice-fr",
+        source: "generated",
+        contentUrl: "/api/media-assets/audio-1/content?v=1",
+      },
+    ],
+  };
+
+  await page.route(/\/api\/stories(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ list: [story] }),
+    });
+  });
+  await page.route(`**/api/stories/${storyId}`, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(story),
+    });
+  });
+  await page.route(
+    `**/api/stories/${storyId}/versions/${versionId}/narrative`,
+    async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          narrative,
+          validation: { valid: true, issues: [] },
+        }),
+      });
+    },
+  );
+  await page.route(
+    `**/api/stories/${storyId}/versions/${versionId}/media`,
+    async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(mediaReview),
+      });
+    },
+  );
+  await page.route("**/api/media-assets/image-1/content*", async (route) => {
+    await route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect width="100%" height="100%" fill="#8b6bdc"/></svg>',
+    });
+  });
+  await page.route("**/api/media-assets/audio-1/content*", async (route) => {
+    await route.fulfill({ contentType: "audio/mpeg", body: "audio" });
+  });
+
+  let regeneratedPrompt = "";
+  await page.route(
+    `**/api/stories/${storyId}/versions/${versionId}/media/image-1/regenerate`,
+    async (route) => {
+      regeneratedPrompt = (route.request().postDataJSON() as { prompt: string })
+        .prompt;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...mediaReview,
+          list: mediaReview.list.map((asset) =>
+            asset.id === "image-1"
+              ? { ...asset, prompt: regeneratedPrompt }
+              : asset,
+          ),
+        }),
+      });
+    },
+  );
+  let compileConfirmed = false;
+  await page.route(`**/api/stories/${storyId}/compile`, async (route) => {
+    compileConfirmed = Boolean(
+      (route.request().postDataJSON() as { mediaReviewed?: boolean })
+        .mediaReviewed,
+    );
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ success: true }),
+    });
+  });
+
+  await authenticate(page);
+  await page.getByRole("heading", { name: story.title }).click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Vérifier les images et les narrations",
+    }),
+  ).toBeVisible();
+  await expect(page.locator(".media-preview img")).toBeVisible();
+  await expect(page.locator(".media-audio-card audio")).toBeVisible();
+
+  const imageCard = page.locator(".media-image-card");
+  await imageCard
+    .getByLabel("Prompt de génération")
+    .fill("Une princesse et un arc-en-ciel");
+  await imageCard.getByRole("button", { name: "Régénérer" }).click();
+  await expect
+    .poll(() => regeneratedPrompt)
+    .toBe("Une princesse et un arc-en-ciel");
+  await page
+    .getByRole("button", { name: "Valider les médias et créer le ZIP" })
+    .click();
+  await expect.poll(() => compileConfirmed).toBe(true);
 });

@@ -31,6 +31,7 @@ import { safeFileName, versionDirectory } from "@/server/storage/paths";
 import { signN8nRequest } from "@/server/security/hmac";
 
 export const JOB_STEPS = ["validate", "tts", "images", "compile"] as const;
+export const MEDIA_GENERATION_STEPS = ["validate", "tts", "images"] as const;
 export type JobStepName = (typeof JOB_STEPS)[number];
 
 function jobContext(jobId: string) {
@@ -94,7 +95,7 @@ export function getBudgetState(versionId?: string) {
   };
 }
 
-function recordUsage(
+export function recordUsage(
   versionId: string,
   provider: string,
   operation: string,
@@ -213,6 +214,17 @@ export function createGenerationJob(versionId: string, overrideBudget = false) {
   }
   const id = randomUUID();
   const now = new Date();
+  const stalePacks = db
+    .select()
+    .from(generatedAssets)
+    .where(
+      and(
+        eq(generatedAssets.versionId, versionId),
+        eq(generatedAssets.type, "pack"),
+      ),
+    )
+    .all();
+  for (const pack of stalePacks) void fs.rm(pack.path, { force: true });
   db.transaction((tx) => {
     tx.insert(generationJobs)
       .values({
@@ -225,7 +237,77 @@ export function createGenerationJob(versionId: string, overrideBudget = false) {
         updatedAt: now,
       })
       .run();
-    for (const step of JOB_STEPS)
+    for (const step of MEDIA_GENERATION_STEPS)
+      tx.insert(jobSteps)
+        .values({
+          id: randomUUID(),
+          jobId: id,
+          step,
+          assetId: "all",
+          idempotencyKey: `${id}:${step}:all`,
+          status: "pending",
+          attempts: 0,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+    tx.delete(generatedAssets)
+      .where(
+        and(
+          eq(generatedAssets.versionId, versionId),
+          eq(generatedAssets.type, "pack"),
+        ),
+      )
+      .run();
+    tx.update(storyVersions)
+      .set({
+        status: "generating",
+        mediaReviewedAt: null,
+        packPath: null,
+        updatedAt: now,
+      })
+      .where(eq(storyVersions.id, versionId))
+      .run();
+  });
+  return getGenerationJob(id);
+}
+
+export function createCompileJob(versionId: string) {
+  ensureDatabase();
+  const version = db
+    .select()
+    .from(storyVersions)
+    .where(eq(storyVersions.id, versionId))
+    .get();
+  if (!version)
+    throw new ApiError(404, "VERSION_NOT_FOUND", "Version introuvable.");
+  if (!version.mediaReviewedAt)
+    throw new ApiError(
+      409,
+      "MEDIA_REVIEW_REQUIRED",
+      "Vérifiez les images et les narrations avant de créer le ZIP.",
+    );
+  if (!(["validated", "ready"] as string[]).includes(version.status))
+    throw new ApiError(
+      409,
+      "MEDIA_NOT_READY",
+      "Les médias ne sont pas prêts à être compilés.",
+    );
+  const id = randomUUID();
+  const now = new Date();
+  db.transaction((tx) => {
+    tx.insert(generationJobs)
+      .values({
+        id,
+        versionId,
+        status: "queued",
+        progress: 0,
+        overrideBudget: false,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    for (const step of ["validate", "compile"] as const)
       tx.insert(jobSteps)
         .values({
           id: randomUUID(),
@@ -287,6 +369,7 @@ function recordAsset(
   provider: string | null,
   filePath: string,
   mimeType: string,
+  metadata?: Record<string, unknown>,
 ) {
   const statPromise = fs.stat(filePath);
   return statPromise.then((stat) => {
@@ -311,6 +394,7 @@ function recordAsset(
         path: filePath,
         mimeType,
         bytes: stat.size,
+        metadataJson: metadata ? JSON.stringify(metadata) : null,
         createdAt: new Date(),
         updatedAt: new Date(),
       })
@@ -357,6 +441,12 @@ async function runTts(jobId: string) {
     "elevenlabs",
     path.join(base, "title.mp3"),
     "audio/mpeg",
+    {
+      text: narrative.title,
+      voiceId: parameters.defaultVoiceId,
+      label: "Titre de l’histoire",
+      source: "generated",
+    },
   );
   for (const [index, scene] of narrative.scenes.entries()) {
     characters += scene.text.length;
@@ -374,6 +464,12 @@ async function runTts(jobId: string) {
         "elevenlabs",
         file,
         "audio/mpeg",
+        {
+          text: scene.text,
+          voiceId: scene.voiceId ?? parameters.defaultVoiceId,
+          label: scene.title,
+          source: "generated",
+        },
       ),
     );
   }
@@ -389,6 +485,12 @@ async function runTts(jobId: string) {
         "elevenlabs",
         file,
         "audio/mpeg",
+        {
+          text: choice.label,
+          voiceId: parameters.defaultVoiceId,
+          label: `Choix : ${choice.label}`,
+          source: "generated",
+        },
       ),
     );
   }
@@ -426,6 +528,11 @@ async function runImages(jobId: string) {
     "openai",
     path.join(base, "cover.png"),
     "image/png",
+    {
+      prompt: coverPrompt,
+      label: "Couverture",
+      source: "generated",
+    },
   );
   await recordAsset(
     version.id,
@@ -434,12 +541,19 @@ async function runImages(jobId: string) {
     "openai",
     path.join(base, "title.png"),
     "image/png",
+    {
+      prompt: coverPrompt,
+      label: "Écran titre",
+      source: "generated",
+      linkedTo: "cover",
+    },
   );
   for (const [index, scene] of narrative.scenes.entries()) {
     if (illustrationMode !== "every-scene") continue;
     if (!scene.imagePrompt) continue;
     const file = path.join(imageDir, `s${index + 1}.png`);
-    await generateImage(`${scene.imagePrompt}${artDirection}`, file);
+    const prompt = `${scene.imagePrompt}${artDirection}`;
+    await generateImage(prompt, file);
     await recordAsset(
       version.id,
       scene.id,
@@ -447,15 +561,18 @@ async function runImages(jobId: string) {
       "openai",
       file,
       "image/png",
+      {
+        prompt,
+        label: scene.title,
+        source: "generated",
+      },
     );
   }
   for (const choice of narrative.choices) {
     if (illustrationMode === "cover") break;
     const file = path.join(imageDir, `choice_${safeFileName(choice.id)}.png`);
-    await generateImage(
-      `Illustration jeunesse simple représentant ce choix : ${choice.label}. Sans texte.${artDirection}`,
-      file,
-    );
+    const prompt = `Illustration jeunesse simple représentant ce choix : ${choice.label}. Sans texte.${artDirection}`;
+    await generateImage(prompt, file);
     await recordAsset(
       version.id,
       `choice:${choice.id}`,
@@ -463,6 +580,11 @@ async function runImages(jobId: string) {
       "openai",
       file,
       "image/png",
+      {
+        prompt,
+        label: `Choix : ${choice.label}`,
+        source: "generated",
+      },
     );
   }
   const generated =
@@ -477,6 +599,12 @@ async function runImages(jobId: string) {
 
 async function runCompile(jobId: string) {
   const { story, version } = jobContext(jobId);
+  if (!version.mediaReviewedAt)
+    throw new ApiError(
+      409,
+      "MEDIA_REVIEW_REQUIRED",
+      "Vérifiez les images et les narrations avant de créer le ZIP.",
+    );
   const narrative = loadNarrative(version.id)!;
   const parameters = JSON.parse(version.parametersJson) as {
     illustrationMode?: "cover" | "choices" | "every-scene";
@@ -576,7 +704,14 @@ export async function runJobStep(jobId: string, step: JobStepName) {
   if (!record) throw new ApiError(404, "STEP_NOT_FOUND", "Étape introuvable.");
   if (record.status === "completed")
     return JSON.parse(record.resultJson ?? "{}");
-  const stepIndex = JOB_STEPS.indexOf(step);
+  const configuredSteps = JOB_STEPS.filter((name) =>
+    db
+      .select({ id: jobSteps.id })
+      .from(jobSteps)
+      .where(and(eq(jobSteps.jobId, jobId), eq(jobSteps.step, name)))
+      .get(),
+  );
+  const stepIndex = configuredSteps.indexOf(step);
   const claimed = db
     .update(jobSteps)
     .set({
@@ -610,7 +745,7 @@ export async function runJobStep(jobId: string, step: JobStepName) {
     .set({
       status: "running",
       currentStep: step,
-      progress: Math.round((stepIndex / JOB_STEPS.length) * 100),
+      progress: Math.round((stepIndex / configuredSteps.length) * 100),
       updatedAt: new Date(),
     })
     .where(eq(generationJobs.id, jobId))
@@ -648,7 +783,9 @@ export async function runJobStep(jobId: string, step: JobStepName) {
       })
       .where(eq(jobSteps.id, record.id))
       .run();
-    const progress = Math.round(((stepIndex + 1) / JOB_STEPS.length) * 100);
+    const progress = Math.round(
+      ((stepIndex + 1) / configuredSteps.length) * 100,
+    );
     db.update(generationJobs)
       .set({
         status: progress === 100 ? "completed" : "running",
@@ -659,6 +796,15 @@ export async function runJobStep(jobId: string, step: JobStepName) {
       })
       .where(eq(generationJobs.id, jobId))
       .run();
+    if (progress === 100 && step !== "compile")
+      db.update(storyVersions)
+        .set({
+          status: "validated",
+          mediaReviewedAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(storyVersions.id, context.version.id))
+        .run();
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erreur inconnue";
@@ -685,7 +831,7 @@ export async function runJobStep(jobId: string, step: JobStepName) {
 }
 
 export async function runLocalPipeline(jobId: string) {
-  for (const step of JOB_STEPS) await runJobStep(jobId, step);
+  for (const step of MEDIA_GENERATION_STEPS) await runJobStep(jobId, step);
 }
 
 export function recoverInterruptedJobs() {

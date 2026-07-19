@@ -6,6 +6,7 @@ import {
   Bell,
   BookHeart,
   BookOpen,
+  CheckCircle2,
   ChevronRight,
   CircleDollarSign,
   Copy,
@@ -14,12 +15,16 @@ import {
   KeyRound,
   LayoutDashboard,
   LogOut,
+  Image as ImageIcon,
   Plus,
   PencilLine,
   RefreshCw,
+  RotateCcw,
   Settings,
   Sparkles,
   Trash2,
+  Upload,
+  Volume2,
   WandSparkles,
 } from "lucide-react";
 import { GraphEditor } from "./graph-editor";
@@ -45,6 +50,7 @@ type StoryVersion = {
   estimatedCostCents: number;
   actualCostCents: number;
   packPath?: string | null;
+  mediaReviewedAt?: string | null;
 };
 type Story = {
   id: string;
@@ -79,6 +85,30 @@ type ApiFailure = {
   code?: string;
   message?: string;
   fieldErrors?: Record<string, string[]>;
+};
+
+type MediaReviewAsset = {
+  id: string;
+  type: "cover" | "image" | "title_audio" | "audio";
+  sceneKey?: string | null;
+  provider?: string | null;
+  mimeType: string;
+  bytes: number;
+  label: string;
+  prompt?: string;
+  text?: string;
+  voiceId?: string;
+  source: "generated" | "uploaded";
+  contentUrl: string;
+};
+
+type MediaReview = {
+  list: MediaReviewAsset[];
+  complete: boolean;
+  expectedCount: number;
+  generatedCount: number;
+  reviewedAt?: string | null;
+  readOnly: boolean;
 };
 
 class ApiClientError extends Error {
@@ -1537,6 +1567,7 @@ function StoryStudio({
   const [budgetConfirmation, setBudgetConfirmation] = useState<{
     details: string[];
   } | null>(null);
+  const [mediaReview, setMediaReview] = useState<MediaReview | null>(null);
   const [job, setJob] = useState<{
     id: string;
     status: string;
@@ -1562,9 +1593,31 @@ function StoryStudio({
       setNarrative(null);
     }
   }, [api, story.id, version]);
+  const loadMedia = useCallback(async () => {
+    if (!version) return;
+    try {
+      setMediaReview(
+        await api<MediaReview>(
+          `/api/stories/${story.id}/versions/${version.id}/media`,
+        ),
+      );
+    } catch {
+      setMediaReview(null);
+    }
+  }, [api, story.id, version]);
   useEffect(() => {
     queueMicrotask(() => void load());
   }, [load]);
+  useEffect(() => {
+    const hasMedia = story.assets?.some((asset) =>
+      ["cover", "image", "title_audio", "audio"].includes(asset.type),
+    );
+    if (hasMedia) queueMicrotask(() => void loadMedia());
+    else queueMicrotask(() => setMediaReview(null));
+  }, [loadMedia, story.assets]);
+  useEffect(() => {
+    queueMicrotask(() => setJob(story.latestJob ?? null));
+  }, [story.latestJob]);
   useEffect(() => {
     if (!job || ["completed", "failed"].includes(job.status)) return;
     const timer = setInterval(
@@ -1573,7 +1626,14 @@ function StoryStudio({
           .then((data) => {
             setJob(data);
             if (data.status === "completed") {
-              onNotice({ tone: "ok", text: "Le pack Telmi est prêt." });
+              onNotice({
+                tone: "ok",
+                text:
+                  data.currentStep === "compile"
+                    ? "Le pack Telmi est prêt."
+                    : "Les images et narrations sont prêtes à être vérifiées.",
+              });
+              void loadMedia();
               onRefresh();
             }
           })
@@ -1581,8 +1641,13 @@ function StoryStudio({
       2000,
     );
     return () => clearInterval(timer);
-  }, [api, job, onNotice, onRefresh]);
+  }, [api, job, loadMedia, onNotice, onRefresh]);
   if (!version) return <div className="empty">Version introuvable.</div>;
+  const hasMedia = Boolean(
+    story.assets?.some((asset) =>
+      ["cover", "image", "title_audio", "audio"].includes(asset.type),
+    ),
+  );
   const action = async (name: string, fn: () => Promise<unknown>) => {
     setBusy(name);
     try {
@@ -1598,6 +1663,14 @@ function StoryStudio({
     }
   };
   const requestMediaGeneration = async (overrideBudget = false) => {
+    if (
+      hasMedia &&
+      !overrideBudget &&
+      !window.confirm(
+        "Régénérer tous les médias supprimera le ZIP actuel. Vous pourrez vérifier chaque nouveau média avant d’en recréer un. Continuer ?",
+      )
+    )
+      return;
     setBusy("media");
     try {
       const data = await api<{ job: typeof job }>("/api/generation-jobs", {
@@ -1765,7 +1838,9 @@ function StoryStudio({
             >
               {busy === "media"
                 ? "Préparation…"
-                : "Générer les médias & le ZIP"}
+                : hasMedia
+                  ? "Régénérer tous les médias"
+                  : "Générer les médias"}
             </button>
           )}
           {version.status === "ready" && (
@@ -1859,7 +1934,15 @@ function StoryStudio({
       {job && (
         <div className="progress-card page-card">
           <div>
-            <strong>Génération en cours</strong>
+            <strong>
+              {job.status === "completed"
+                ? job.currentStep === "compile"
+                  ? "ZIP terminé"
+                  : "Médias prêts à vérifier"
+                : job.status === "failed"
+                  ? "Génération interrompue"
+                  : "Génération en cours"}
+            </strong>
             <span>
               {job.currentStep ?? "en attente"} · {job.progress}%
             </span>
@@ -1892,6 +1975,19 @@ function StoryStudio({
             </button>
           )}
         </div>
+      )}
+      {mediaReview && mediaReview.list.length > 0 && (
+        <MediaReviewPanel
+          storyId={story.id}
+          version={version}
+          review={mediaReview}
+          api={api}
+          busy={busy}
+          onBusy={setBusy}
+          onChange={setMediaReview}
+          onNotice={onNotice}
+          onRefresh={onRefresh}
+        />
       )}
       {narrative ? (
         <>
@@ -2049,6 +2145,318 @@ function StoryStudio({
         </div>
       )}
     </div>
+  );
+}
+
+function MediaReviewPanel({
+  storyId,
+  version,
+  review,
+  api,
+  busy,
+  onBusy,
+  onChange,
+  onNotice,
+  onRefresh,
+}: {
+  storyId: string;
+  version: StoryVersion;
+  review: MediaReview;
+  api: <T>(url: string, init?: RequestInit) => Promise<T>;
+  busy: string;
+  onBusy: (value: string) => void;
+  onChange: (review: MediaReview) => void;
+  onNotice: (notice: { tone: "ok" | "error" | "info"; text: string }) => void;
+  onRefresh: () => void;
+}) {
+  const images = review.list.filter((asset) =>
+    ["cover", "image"].includes(asset.type),
+  );
+  const audios = review.list.filter((asset) =>
+    ["title_audio", "audio"].includes(asset.type),
+  );
+  const locked = review.readOnly || version.status === "generating";
+
+  const regenerate = async (
+    asset: MediaReviewAsset,
+    input: { prompt?: string; voiceId?: string },
+  ) => {
+    onBusy(`regenerate:${asset.id}`);
+    try {
+      onChange(
+        await api<MediaReview>(
+          `/api/stories/${storyId}/versions/${version.id}/media/${asset.id}/regenerate`,
+          { method: "POST", body: JSON.stringify(input) },
+        ),
+      );
+      onNotice({
+        tone: "ok",
+        text: `« ${asset.label} » a été régénéré. Vérifiez le nouveau résultat.`,
+      });
+      onRefresh();
+    } catch (error) {
+      onNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      onBusy("");
+    }
+  };
+
+  const upload = async (asset: MediaReviewAsset, file: File) => {
+    onBusy(`upload:${asset.id}`);
+    try {
+      const body = new FormData();
+      body.set("file", file);
+      onChange(
+        await api<MediaReview>(
+          `/api/stories/${storyId}/versions/${version.id}/media/${asset.id}/upload`,
+          { method: "POST", body },
+        ),
+      );
+      onNotice({
+        tone: "ok",
+        text: `Votre fichier remplace maintenant « ${asset.label} ».`,
+      });
+      onRefresh();
+    } catch (error) {
+      onNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      onBusy("");
+    }
+  };
+
+  const compile = async () => {
+    onBusy("compile");
+    try {
+      await api(`/api/stories/${storyId}/compile`, {
+        method: "POST",
+        body: JSON.stringify({ versionId: version.id, mediaReviewed: true }),
+      });
+      onNotice({
+        tone: "ok",
+        text: "Les médias sont validés et le ZIP Telmi est prêt.",
+      });
+      onRefresh();
+    } catch (error) {
+      onNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      onBusy("");
+    }
+  };
+
+  return (
+    <section className="media-review page-card">
+      <div className="media-review-heading">
+        <div>
+          <span className="eyebrow">Contrôle parental</span>
+          <h2>Vérifier les images et les narrations</h2>
+          <p>
+            Prévisualisez chaque média. Vous pouvez le régénérer seul ou le
+            remplacer par votre propre fichier avant de créer le ZIP.
+          </p>
+        </div>
+        <span className={`media-count ${review.complete ? "complete" : ""}`}>
+          {review.generatedCount}/{review.expectedCount} prêts
+        </span>
+      </div>
+
+      <div className="media-section-heading">
+        <ImageIcon />
+        <div>
+          <h3>Illustrations</h3>
+          <p>Le prompt utilisé reste visible et modifiable.</p>
+        </div>
+      </div>
+      <div className="media-image-grid">
+        {images.map((asset) => (
+          <MediaImageCard
+            key={`${asset.id}:${asset.contentUrl}`}
+            asset={asset}
+            disabled={locked || Boolean(busy)}
+            busy={busy.endsWith(asset.id)}
+            onRegenerate={(prompt) => regenerate(asset, { prompt })}
+            onUpload={(file) => upload(asset, file)}
+          />
+        ))}
+      </div>
+
+      <div className="media-section-heading audio-heading">
+        <Volume2 />
+        <div>
+          <h3>Narrations</h3>
+          <p>Écoutez le MP3 complet avant de le conserver.</p>
+        </div>
+      </div>
+      <div className="media-audio-list">
+        {audios.map((asset) => (
+          <MediaAudioCard
+            key={`${asset.id}:${asset.contentUrl}`}
+            asset={asset}
+            disabled={locked || Boolean(busy)}
+            busy={busy.endsWith(asset.id)}
+            onRegenerate={() => regenerate(asset, { voiceId: asset.voiceId })}
+            onUpload={(file) => upload(asset, file)}
+          />
+        ))}
+      </div>
+
+      <div className="media-review-footer">
+        <div>
+          {version.status === "ready" || version.status === "published" ? (
+            <span className="media-ready-message">
+              <CheckCircle2 /> Le ZIP correspond aux médias affichés.
+            </span>
+          ) : (
+            <p>
+              Ce bouton confirme votre contrôle et autorise seulement ensuite la
+              création du pack.
+            </p>
+          )}
+        </div>
+        {version.status === "validated" && (
+          <button
+            className="primary"
+            disabled={!review.complete || Boolean(busy)}
+            onClick={() => void compile()}
+          >
+            <CheckCircle2 />
+            {busy === "compile"
+              ? "Création du ZIP…"
+              : "Valider les médias et créer le ZIP"}
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function MediaImageCard({
+  asset,
+  disabled,
+  busy,
+  onRegenerate,
+  onUpload,
+}: {
+  asset: MediaReviewAsset;
+  disabled: boolean;
+  busy: boolean;
+  onRegenerate: (prompt: string) => Promise<void>;
+  onUpload: (file: File) => Promise<void>;
+}) {
+  const [prompt, setPrompt] = useState(asset.prompt ?? "");
+  return (
+    <article className="media-image-card">
+      <div className="media-preview">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={asset.contentUrl} alt={asset.label} />
+        <span>{asset.source === "uploaded" ? "Image personnelle" : "IA"}</span>
+      </div>
+      <div className="media-card-body">
+        <strong>{asset.label}</strong>
+        <label>
+          <span>Prompt de génération</span>
+          <textarea
+            value={prompt}
+            maxLength={4000}
+            disabled={disabled}
+            onChange={(event) => setPrompt(event.target.value)}
+          />
+        </label>
+        <div className="media-card-actions">
+          <button
+            className="secondary compact"
+            disabled={disabled || !prompt.trim()}
+            onClick={() => void onRegenerate(prompt)}
+          >
+            <RotateCcw /> {busy ? "Traitement…" : "Régénérer"}
+          </button>
+          <label
+            className={`ghost compact upload-button ${disabled ? "disabled" : ""}`}
+          >
+            <Upload /> Envoyer une image
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              disabled={disabled}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void onUpload(file);
+                event.target.value = "";
+              }}
+            />
+          </label>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function MediaAudioCard({
+  asset,
+  disabled,
+  busy,
+  onRegenerate,
+  onUpload,
+}: {
+  asset: MediaReviewAsset;
+  disabled: boolean;
+  busy: boolean;
+  onRegenerate: () => Promise<void>;
+  onUpload: (file: File) => Promise<void>;
+}) {
+  return (
+    <article className="media-audio-card">
+      <div className="audio-card-copy">
+        <span className="audio-icon">
+          <Volume2 />
+        </span>
+        <div>
+          <strong>{asset.label}</strong>
+          {asset.text && <p>{asset.text}</p>}
+          <small>
+            {asset.source === "uploaded"
+              ? "Fichier personnel"
+              : (asset.provider ?? "Synthèse vocale IA")}
+            {asset.voiceId ? ` · voix ${asset.voiceId}` : ""}
+          </small>
+        </div>
+      </div>
+      <audio key={asset.contentUrl} controls preload="metadata">
+        <source src={asset.contentUrl} type="audio/mpeg" />
+      </audio>
+      <div className="media-card-actions">
+        <button
+          className="secondary compact"
+          disabled={disabled || !asset.voiceId}
+          onClick={() => void onRegenerate()}
+        >
+          <RotateCcw /> {busy ? "Traitement…" : "Régénérer"}
+        </button>
+        <label
+          className={`ghost compact upload-button ${disabled ? "disabled" : ""}`}
+        >
+          <Upload /> Envoyer un audio
+          <input
+            type="file"
+            accept="audio/*,.mp3,.wav,.m4a,.ogg"
+            disabled={disabled}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void onUpload(file);
+              event.target.value = "";
+            }}
+          />
+        </label>
+      </div>
+    </article>
   );
 }
 

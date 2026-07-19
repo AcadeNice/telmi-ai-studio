@@ -74,7 +74,7 @@ Les clés sont chiffrées dans SQLite. Elles ne sont jamais renvoyées par l’A
 4. activer le workflow et copier son URL de production dans les paramètres ;
 5. s’assurer que n8n peut atteindre l’URL publique de Telmi AI Studio.
 
-Sans webhook n8n, l’application exécute le pipeline localement. Le workflow appelle successivement `validate`, `tts`, `images` et `compile`. Chaque appel est signé et idempotent.
+Sans webhook n8n, l’application exécute le pipeline localement. Le workflow appelle successivement `validate`, `tts` et `images`. Chaque appel est signé et idempotent. La compilation reste volontairement dans l’application : le parent prévisualise, remplace ou régénère les médias, puis confirme explicitement la création du ZIP.
 
 ## Store privé Telmi Sync
 
