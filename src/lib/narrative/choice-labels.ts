@@ -3,11 +3,35 @@ import type { NarrativeChoice, NarrativeStory } from "./schema";
 const noTextRequirement =
   "Image exclusivement visuelle. Aucun texte, mot, lettre, chiffre, titre, logo, signature, filigrane, pancarte, affiche, enseigne, livre ou symbole ressemblant à de l’écriture.";
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function removeChildName(visualDescription: string, childName?: string) {
+  const name = childName?.trim();
+  if (!name) return visualDescription;
+  return visualDescription
+    .replace(
+      new RegExp(
+        `(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}(?=$|[^\\p{L}\\p{N}])`,
+        "giu",
+      ),
+      "$1",
+    )
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/^\s*[,;:]\s*/, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export function noTextImagePrompt(
   visualDescription: string,
   artDirection = "",
+  childName?: string,
 ) {
-  const description = visualDescription.trim().replace(/[.\s]+$/, "");
+  const description = removeChildName(visualDescription, childName)
+    .trim()
+    .replace(/[.\s]+$/, "");
   const direction = artDirection.trim().replace(/[.\s]+$/, "");
   return [description, direction, noTextRequirement]
     .filter(Boolean)
@@ -15,10 +39,15 @@ export function noTextImagePrompt(
     .join(" ");
 }
 
-export function coverImagePrompt(narrative: NarrativeStory, artDirection = "") {
+export function coverImagePrompt(
+  narrative: NarrativeStory,
+  artDirection = "",
+  childName?: string,
+) {
   return noTextImagePrompt(
     `Illustration de couverture jeunesse douce et colorée au format horizontal 4:3. Représenter visuellement cette histoire sans afficher son titre : ${narrative.description}`,
     artDirection,
+    childName,
   );
 }
 
@@ -50,6 +79,7 @@ export function choiceImagePrompt(
   narrative: NarrativeStory,
   choice: NarrativeChoice,
   artDirection = "",
+  childName?: string,
 ) {
   const source = narrative.scenes.find(
     (scene) => scene.id === choice.sourceSceneId,
@@ -70,5 +100,5 @@ export function choiceImagePrompt(
   ]
     .filter(Boolean)
     .join(". ");
-  return noTextImagePrompt(visualDescription, artDirection);
+  return noTextImagePrompt(visualDescription, artDirection, childName);
 }

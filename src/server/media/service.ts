@@ -76,6 +76,7 @@ function derivedAssetMetadata(
   const parameters = JSON.parse(context.version.parametersJson) as {
     defaultVoiceId?: string;
     artDirection?: string;
+    childName?: string;
   };
   if (!narrative) return {};
   const existing = parseMetadata(asset.metadataJson);
@@ -83,7 +84,11 @@ function derivedAssetMetadata(
     return {
       prompt:
         existing.prompt ??
-        coverImagePrompt(narrative, artDirection(parameters)),
+        coverImagePrompt(
+          narrative,
+          artDirection(parameters),
+          parameters.childName,
+        ),
       label: existing.label ?? "Couverture",
       source: existing.source ?? "generated",
       ...existing,
@@ -110,7 +115,12 @@ function derivedAssetMetadata(
       ...existing,
       prompt:
         existing.prompt ??
-        choiceImagePrompt(narrative, choice, artDirection(parameters)),
+        choiceImagePrompt(
+          narrative,
+          choice,
+          artDirection(parameters),
+          parameters.childName,
+        ),
       label: `Choix : ${choiceDisplayLabel(narrative, choice)}`,
       source: existing.source ?? "generated",
     };
@@ -121,6 +131,7 @@ function derivedAssetMetadata(
         noTextImagePrompt(
           scene.imagePrompt ?? scene.text,
           artDirection(parameters),
+          parameters.childName,
         ),
       label: existing.label ?? scene.title,
       source: existing.source ?? "generated",

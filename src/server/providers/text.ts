@@ -30,6 +30,7 @@ const creativeRules = `
 Règles créatives obligatoires :
 - si requiredStoryElements est renseigné, intégrer naturellement chacun des éléments demandés dans le récit ;
 - si artDirection est renseignée, l'appliquer à tous les imagePrompt de manière cohérente ;
+- dans chaque imagePrompt, ne jamais mentionner childName ni le prénom de l'enfant ; décrire uniquement le personnage principal par sa nature, son espèce, son apparence et son rôle ;
 - ne jamais ajouter de texte à afficher dans les illustrations ;
 - conserver un vocabulaire, une durée et une intensité adaptés à l'âge indiqué.`;
 

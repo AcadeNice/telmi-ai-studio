@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { NarrativeStory } from "./schema";
-import { choiceDisplayLabel, choiceImagePrompt } from "./choice-labels";
+import {
+  choiceDisplayLabel,
+  choiceImagePrompt,
+  noTextImagePrompt,
+  removeChildName,
+} from "./choice-labels";
 
 const narrative: NarrativeStory = {
   schemaVersion: "1.0",
@@ -50,5 +55,18 @@ describe("choice labels used by media and graph views", () => {
     expect(prompt).toContain("Aucun texte");
     expect(prompt).not.toContain("«");
     expect(prompt).not.toContain("Continuer");
+  });
+
+  it("removes the child's first name without removing similar words", () => {
+    expect(
+      removeChildName("Mila, une petite licorne avance avec Émilane.", "Mila"),
+    ).toBe("une petite licorne avance avec Émilane.");
+    expect(
+      noTextImagePrompt(
+        "Mila la licorne traverse la forêt avec mila.",
+        "",
+        "Mila",
+      ),
+    ).not.toMatch(/mila/iu);
   });
 });

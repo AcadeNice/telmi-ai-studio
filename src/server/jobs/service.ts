@@ -497,6 +497,7 @@ async function runImages(jobId: string) {
   const parameters = JSON.parse(version.parametersJson) as {
     illustrationMode?: "cover" | "choices" | "every-scene";
     artDirection?: string;
+    childName?: string;
   };
   const illustrationMode = parameters.illustrationMode ?? "choices";
   const artDirection = parameters.artDirection?.trim()
@@ -504,7 +505,11 @@ async function runImages(jobId: string) {
     : "";
   const base = path.join(versionDirectory(story.id, version.version), "assets");
   const imageDir = path.join(base, "images");
-  const coverPrompt = coverImagePrompt(narrative, artDirection);
+  const coverPrompt = coverImagePrompt(
+    narrative,
+    artDirection,
+    parameters.childName,
+  );
   await generateImage(coverPrompt, path.join(base, "cover.png"));
   await fs.copyFile(path.join(base, "cover.png"), path.join(base, "title.png"));
   await recordAsset(
@@ -538,7 +543,11 @@ async function runImages(jobId: string) {
     if (illustrationMode !== "every-scene") continue;
     if (!scene.imagePrompt) continue;
     const file = path.join(imageDir, `s${index + 1}.png`);
-    const prompt = noTextImagePrompt(scene.imagePrompt, artDirection);
+    const prompt = noTextImagePrompt(
+      scene.imagePrompt,
+      artDirection,
+      parameters.childName,
+    );
     await generateImage(prompt, file);
     await recordAsset(
       version.id,
@@ -557,7 +566,12 @@ async function runImages(jobId: string) {
   for (const choice of narrative.choices) {
     if (illustrationMode === "cover") break;
     const file = path.join(imageDir, `choice_${safeFileName(choice.id)}.png`);
-    const prompt = choiceImagePrompt(narrative, choice, artDirection);
+    const prompt = choiceImagePrompt(
+      narrative,
+      choice,
+      artDirection,
+      parameters.childName,
+    );
     await generateImage(prompt, file);
     await recordAsset(
       version.id,
