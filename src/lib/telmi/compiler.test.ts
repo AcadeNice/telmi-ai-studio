@@ -81,13 +81,82 @@ describe("Telmi compiler", () => {
     });
   });
 
-  it("omits scene and choice images in cover-only mode", () => {
+  it("keeps the cover visible in cover-only mode", () => {
     const { nodes } = compileTelmiDocuments(story, "ffffff-test", 1, "cover");
     expect(
       Object.entries(nodes.stages)
         .filter(([key]) => key !== "backStage")
-        .every(([, stage]) => stage.image === null),
+        .every(([, stage]) => stage.image === "story_cover.png"),
     ).toBe(true);
+  });
+
+  it("preserves the last displayed image through merged branches", () => {
+    const mergedStory: NarrativeStory = {
+      ...story,
+      scenes: [
+        story.scenes[0]!,
+        {
+          id: "branche-a",
+          type: "narrative",
+          title: "Branche A",
+          text: "La première branche continue.",
+        },
+        {
+          id: "branche-b",
+          type: "narrative",
+          title: "Branche B",
+          text: "La seconde branche continue.",
+        },
+        {
+          id: "fin",
+          type: "ending",
+          title: "Fin commune",
+          text: "Les deux chemins se rejoignent.",
+        },
+      ],
+      choices: [
+        {
+          id: "partager",
+          sourceSceneId: "intro",
+          label: "Partager",
+          targetSceneId: "branche-a",
+          order: 0,
+        },
+        {
+          id: "marcher",
+          sourceSceneId: "intro",
+          label: "Marcher",
+          targetSceneId: "branche-b",
+          order: 1,
+        },
+        {
+          id: "suite-a",
+          sourceSceneId: "branche-a",
+          label: "Continuer",
+          targetSceneId: "fin",
+          order: 0,
+        },
+        {
+          id: "suite-b",
+          sourceSceneId: "branche-b",
+          label: "Continuer",
+          targetSceneId: "fin",
+          order: 0,
+        },
+      ],
+    };
+
+    const { nodes } = compileTelmiDocuments(
+      mergedStory,
+      "ffffff-test",
+      1,
+      "choices",
+    );
+    expect(nodes.stages.s2?.image).toBe("choice_partager.png");
+    expect(nodes.stages.s3?.image).toBe("choice_marcher.png");
+    expect(nodes.stages.s4?.image).toBe("choice_partager.png");
+    expect(nodes.stages.s4_v2?.image).toBe("choice_marcher.png");
+    expect(validateTelmiDocuments(nodes)).toEqual({ valid: true, errors: [] });
   });
 
   it("includes author and readable voice credits in metadata", () => {

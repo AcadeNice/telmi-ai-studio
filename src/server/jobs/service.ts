@@ -646,6 +646,12 @@ async function runCompile(jobId: string) {
   const base = versionDirectory(story.id, version.version);
   const assetDir = path.join(base, "assets");
   await fs.mkdir(assetDir, { recursive: true });
+  const imageDir = path.join(assetDir, "images");
+  await fs.mkdir(imageDir, { recursive: true });
+  await fs.copyFile(
+    path.join(assetDir, "cover.png"),
+    path.join(imageDir, "story_cover.png"),
+  );
   const requiredImages = new Set<string>(["title.png", "cover.png"]);
   const requiredAudios = new Set<string>(["title.mp3"]);
   for (const stage of Object.values(documents.nodes.stages)) {

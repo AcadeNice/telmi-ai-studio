@@ -26,6 +26,15 @@ export function compileTelmiDocuments(
   const sceneKeys = new Map(
     story.scenes.map((scene, index) => [scene.id, `s${index + 1}`]),
   );
+  const scenesById = new Map(story.scenes.map((scene) => [scene.id, scene]));
+  const outgoingByScene = new Map(
+    story.scenes.map((scene) => [
+      scene.id,
+      story.choices
+        .filter((choice) => choice.sourceSceneId === scene.id)
+        .sort((a, b) => a.order - b.order),
+    ]),
+  );
   const stages: Record<string, TelmiStage> = {
     backStage: {
       image: null,
@@ -45,38 +54,73 @@ export function compileTelmiDocuments(
   > = {
     backStage: { title: "Retour", notes: "" },
   };
+  const variantKeys = new Map<string, string>();
+  const variantCounts = new Map<string, number>();
 
-  for (const [sceneIndex, scene] of story.scenes.entries()) {
-    const stageKey = sceneKeys.get(scene.id)!;
-    const outgoing = story.choices
-      .filter((choice) => choice.sourceSceneId === scene.id)
-      .sort((a, b) => a.order - b.order);
-    const sceneAction = `a_scene_${sceneIndex + 1}`;
-    actions[sceneAction] = [{ stage: stageKey }];
+  const compileSceneVariant = (
+    sceneId: string,
+    inheritedImage: string,
+  ): string => {
+    const scene = scenesById.get(sceneId);
+    const baseStageKey = sceneKeys.get(sceneId);
+    if (!scene || !baseStageKey)
+      throw new Error(`La scène ${sceneId} est introuvable.`);
+
+    const image =
+      illustrationMode === "every-scene" && scene.imagePrompt
+        ? `${baseStageKey}.png`
+        : inheritedImage;
+    const variantIdentity = `${sceneId}\u0000${image}`;
+    const existing = variantKeys.get(variantIdentity);
+    if (existing) return existing;
+
+    const variantNumber = (variantCounts.get(sceneId) ?? 0) + 1;
+    variantCounts.set(sceneId, variantNumber);
+    const variantSuffix = variantNumber === 1 ? "" : `_v${variantNumber}`;
+    const stageKey = `${baseStageKey}${variantSuffix}`;
+    const sceneIndex = story.scenes.findIndex((item) => item.id === sceneId);
+    const actionIndex = sceneIndex + 1;
+    const outgoing = outgoingByScene.get(sceneId) ?? [];
+    variantKeys.set(variantIdentity, stageKey);
+
+    // Register the stage before walking its descendants. Narrative validation
+    // rejects cycles, while this also keeps compilation safe for shared paths.
+    stages[stageKey] = {
+      image,
+      audio: `${baseStageKey}.mp3`,
+      ok: null,
+      home: { action: "backAction", index: 0 },
+      control: { ok: true, home: true, autoplay: false },
+    };
+    notes[stageKey] = {
+      title: scene.title,
+      notes: scene.text,
+      color:
+        scene.type === "ending"
+          ? "green3"
+          : scene.type === "choice"
+            ? "orange2"
+            : "blue3",
+    };
+    actions[`a_scene_${actionIndex}${variantSuffix}`] = [{ stage: stageKey }];
 
     if (scene.type === "choice") {
-      const selectionAction = `a_choices_${sceneIndex + 1}`;
+      const selectionAction = `a_choices_${actionIndex}${variantSuffix}`;
       const selectionStages: Array<{ stage: string }> = [];
       for (const [choiceIndex, choice] of outgoing.entries()) {
-        const choiceStage = `q${sceneIndex + 1}_${choiceIndex + 1}`;
-        const targetIndex = story.scenes.findIndex(
-          (item) => item.id === choice.targetSceneId,
+        const choiceStage = `q${actionIndex}${variantSuffix}_${choiceIndex + 1}`;
+        const choiceImage =
+          illustrationMode === "cover"
+            ? image
+            : `choice_${safe(choice.id)}.png`;
+        const targetStage = compileSceneVariant(
+          choice.targetSceneId,
+          choiceImage,
         );
-        const targetStage = sceneKeys.get(choice.targetSceneId);
-        if (targetIndex === -1 || !targetStage) {
-          throw new Error(
-            `Le choix ${choice.id} pointe vers une scène inconnue (${choice.targetSceneId}).`,
-          );
-        }
-        const uniqueAction = `a_choice_${sceneIndex + 1}_${choiceIndex + 1}`;
-        // Point directly to the target stage. The target scene action may not
-        // have been created yet when the destination follows this scene.
+        const uniqueAction = `a_choice_${actionIndex}${variantSuffix}_${choiceIndex + 1}`;
         actions[uniqueAction] = [{ stage: targetStage }];
         stages[choiceStage] = {
-          image:
-            illustrationMode === "cover"
-              ? null
-              : `choice_${safe(choice.id)}.png`,
+          image: choiceImage,
           audio: `choice_${safe(choice.id)}.mp3`,
           ok: { action: uniqueAction, index: 0 },
           home: { action: "backAction", index: 0 },
@@ -90,54 +134,28 @@ export function compileTelmiDocuments(
         selectionStages.push({ stage: choiceStage });
       }
       actions[selectionAction] = selectionStages;
-      stages[stageKey] = {
-        image:
-          illustrationMode === "every-scene" && scene.imagePrompt
-            ? `${stageKey}.png`
-            : null,
-        audio: `${stageKey}.mp3`,
-        ok: { action: selectionAction, index: 0 },
-        home: { action: "backAction", index: 0 },
-        control: { ok: true, home: true, autoplay: true },
-      };
-    } else {
-      let ok: TelmiStage["ok"] = null;
-      if (outgoing[0]) {
-        const targetIndex = story.scenes.findIndex(
-          (item) => item.id === outgoing[0]!.targetSceneId,
-        );
-        const uniqueAction = `a_next_${sceneIndex + 1}`;
-        actions[uniqueAction] = [
-          { stage: sceneKeys.get(story.scenes[targetIndex]!.id)! },
-        ];
-        ok = { action: uniqueAction, index: 0 };
-      }
-      stages[stageKey] = {
-        image:
-          illustrationMode === "every-scene" && scene.imagePrompt
-            ? `${stageKey}.png`
-            : null,
-        audio: `${stageKey}.mp3`,
-        ok,
-        home: { action: "backAction", index: 0 },
-        control: { ok: true, home: true, autoplay: ok !== null },
-      };
+      stages[stageKey].ok = { action: selectionAction, index: 0 };
+      stages[stageKey].control.autoplay = true;
+    } else if (outgoing[0]) {
+      const targetStage = compileSceneVariant(
+        outgoing[0].targetSceneId,
+        image,
+      );
+      const uniqueAction = `a_next_${actionIndex}${variantSuffix}`;
+      actions[uniqueAction] = [{ stage: targetStage }];
+      stages[stageKey].ok = { action: uniqueAction, index: 0 };
+      stages[stageKey].control.autoplay = true;
     }
-    notes[stageKey] = {
-      title: scene.title,
-      notes: scene.text,
-      color:
-        scene.type === "ending"
-          ? "green3"
-          : scene.type === "choice"
-            ? "orange2"
-            : "blue3",
-    };
-  }
+
+    return stageKey;
+  };
 
   const startIndex = story.scenes.findIndex(
     (scene) => scene.id === story.startSceneId,
   );
+  if (startIndex === -1)
+    throw new Error(`La scène initiale ${story.startSceneId} est introuvable.`);
+  compileSceneVariant(story.startSceneId, "story_cover.png");
   const nodes: TelmiNodes = {
     startAction: { action: `a_scene_${startIndex + 1}`, index: 0 },
     stages,
