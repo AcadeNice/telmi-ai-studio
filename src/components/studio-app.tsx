@@ -1601,8 +1601,14 @@ function StoryStudio({
   const [narrative, setNarrative] = useState<NarrativeStory | null>(null);
   const [validation, setValidation] = useState<{
     valid: boolean;
-    issues: Array<{ severity: string; message: string }>;
+    issues: Array<{
+      severity: "error" | "warning";
+      code: string;
+      message: string;
+      sceneId?: string;
+    }>;
   } | null>(null);
+  const [validationExpanded, setValidationExpanded] = useState(false);
   const [tab, setTab] = useState<"list" | "graph" | "json">("list");
   const [json, setJson] = useState("");
   const [busy, setBusy] = useState("");
@@ -1667,6 +1673,11 @@ function StoryStudio({
   useEffect(() => {
     queueMicrotask(() => setJob(story.latestJob ?? null));
   }, [story.latestJob]);
+  useEffect(() => {
+    queueMicrotask(() =>
+      setValidationExpanded(Boolean(validation?.issues.length)),
+    );
+  }, [validation]);
   useEffect(() => {
     if (!job || ["completed", "failed"].includes(job.status)) return;
     const timer = setInterval(
@@ -1831,6 +1842,20 @@ function StoryStudio({
       setBusy("");
     }
   };
+  const focusValidationIssue = (sceneId: string) => {
+    setSelectedSceneId(sceneId);
+    setTab("list");
+    window.setTimeout(() => {
+      document.getElementById(`scene-${sceneId}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 50);
+  };
+  const validationErrors =
+    validation?.issues.filter((issue) => issue.severity === "error") ?? [];
+  const validationWarnings =
+    validation?.issues.filter((issue) => issue.severity === "warning") ?? [];
   return (
     <div className="page-stack">
       <div className="studio-header page-card">
@@ -2065,13 +2090,81 @@ function StoryStudio({
             <div
               className={`validation-banner ${validation.valid ? "valid" : "invalid"}`}
             >
-              <strong>
-                {validation.valid ? "Structure valide" : "Corrections requises"}
-              </strong>
-              <span>
-                {validation.issues.length} remarque
-                {validation.issues.length > 1 ? "s" : ""}
-              </span>
+              <button
+                className="validation-summary"
+                type="button"
+                aria-expanded={validationExpanded}
+                onClick={() => setValidationExpanded((value) => !value)}
+              >
+                <span>
+                  <strong>
+                    {validationErrors.length > 0
+                      ? "Corrections requises"
+                      : validationWarnings.length > 0
+                        ? "Structure valide, avec des points à vérifier"
+                        : "Structure valide"}
+                  </strong>
+                  {validation.issues.length > 0 && (
+                    <small>
+                      {validationErrors.length > 0 &&
+                        `${validationErrors.length} correction${validationErrors.length > 1 ? "s" : ""}`}
+                      {validationErrors.length > 0 &&
+                        validationWarnings.length > 0 &&
+                        " · "}
+                      {validationWarnings.length > 0 &&
+                        `${validationWarnings.length} avertissement${validationWarnings.length > 1 ? "s" : ""}`}
+                    </small>
+                  )}
+                </span>
+                {validation.issues.length > 0 && (
+                  <span className="validation-toggle-label">
+                    {validationExpanded ? "Masquer" : "Voir les détails"}
+                    <ChevronRight />
+                  </span>
+                )}
+              </button>
+              {validationExpanded && validation.issues.length > 0 && (
+                <div className="validation-details">
+                  {validation.issues.map((issue, index) => {
+                    const scene = issue.sceneId
+                      ? narrative.scenes.find(
+                          (item) => item.id === issue.sceneId,
+                        )
+                      : undefined;
+                    return (
+                      <div
+                        className={`validation-issue ${issue.severity}`}
+                        key={`${issue.code}-${issue.sceneId ?? "global"}-${index}`}
+                      >
+                        <span className="validation-severity">
+                          {issue.severity === "error"
+                            ? "À corriger"
+                            : "À vérifier"}
+                        </span>
+                        <div>
+                          <strong>{scene?.title ?? "Remarque générale"}</strong>
+                          <p>{issue.message}</p>
+                        </div>
+                        {issue.sceneId && (
+                          <button
+                            className="ghost compact"
+                            type="button"
+                            onClick={() => focusValidationIssue(issue.sceneId!)}
+                          >
+                            Voir la scène <ChevronRight />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {!validation.valid && version.status !== "draft" && (
+                    <p className="validation-locked-note">
+                      Cette version est verrouillée. Créez un brouillon dérivé
+                      pour appliquer les corrections.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
           {version.status === "draft" && (
@@ -2128,6 +2221,7 @@ function StoryStudio({
                   )}
                   editable={version.status === "draft"}
                   forceOpen={selectedSceneId === scene.id}
+                  highlighted={selectedSceneId === scene.id}
                   busy={busy === `scene:${scene.id}`}
                   onSave={saveSceneEdit}
                   onClose={() => setSelectedSceneId(null)}
@@ -2596,6 +2690,7 @@ function SceneEditorCard({
   choices,
   editable,
   forceOpen,
+  highlighted,
   busy,
   onSave,
   onClose,
@@ -2605,6 +2700,7 @@ function SceneEditorCard({
   choices: NarrativeChoice[];
   editable: boolean;
   forceOpen: boolean;
+  highlighted: boolean;
   busy: boolean;
   onSave: (
     scene: NarrativeScene,
@@ -2626,7 +2722,7 @@ function SceneEditorCard({
   return (
     <article
       id={`scene-${scene.id}`}
-      className={`scene-card ${editing ? "editing" : ""}`}
+      className={`scene-card ${editing ? "editing" : ""} ${highlighted ? "validation-target" : ""}`}
     >
       <span>{index + 1}</span>
       <div className="scene-card-content">
