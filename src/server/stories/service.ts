@@ -1,5 +1,6 @@
-import { and, asc, desc, eq, isNull, max } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, max, ne } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { ApiError } from "@/server/api/response";
 import { db, ensureDatabase } from "@/server/db";
 import {
   choices,
@@ -198,6 +199,54 @@ export function createVersion(storyId: string, parametersJson?: string) {
     if (narrative) saveNarrative(id, narrative);
   }
   return db.select().from(storyVersions).where(eq(storyVersions.id, id)).get();
+}
+
+export function publishStoryVersion(
+  storyId: string,
+  versionId: string,
+  replace = true,
+) {
+  const version = db
+    .select()
+    .from(storyVersions)
+    .where(
+      and(
+        eq(storyVersions.id, versionId),
+        eq(storyVersions.storyId, storyId),
+      ),
+    )
+    .get();
+  if (!version)
+    throw new ApiError(404, "VERSION_NOT_FOUND", "Version introuvable.");
+  if (version.status !== "ready" && version.status !== "published")
+    throw new ApiError(
+      409,
+      "PACK_NOT_READY",
+      "Le pack doit être compilé avant publication.",
+    );
+  const now = new Date();
+  db.transaction((tx) => {
+    if (replace)
+      tx.update(storyVersions)
+        .set({ status: "superseded", updatedAt: now })
+        .where(
+          and(
+            eq(storyVersions.storyId, storyId),
+            eq(storyVersions.status, "published"),
+            ne(storyVersions.id, versionId),
+          ),
+        )
+        .run();
+    tx.update(storyVersions)
+      .set({ status: "published", publishedAt: now, updatedAt: now })
+      .where(eq(storyVersions.id, versionId))
+      .run();
+    tx.update(stories)
+      .set({ activeVersionId: versionId, updatedAt: now })
+      .where(eq(stories.id, storyId))
+      .run();
+  });
+  return { success: true, status: "published" as const };
 }
 
 export function saveNarrative(

@@ -81,7 +81,7 @@ export function validateNarrativeGraph(
 
   const outgoing = new Map<string, string[]>();
   const choiceIds = new Set<string>();
-  const choiceLabels = new Map<string, string>();
+  const choiceLabels = new Set<string>();
   for (const choice of story.choices) {
     if (choiceIds.has(choice.id))
       issues.push({
@@ -92,15 +92,15 @@ export function validateNarrativeGraph(
       });
     choiceIds.add(choice.id);
     const normalizedLabel = normalizeChoiceLabel(choice.label);
-    const previousSource = choiceLabels.get(normalizedLabel);
-    if (previousSource !== undefined)
+    const labelKey = `${choice.sourceSceneId}\u0000${normalizedLabel}`;
+    if (choiceLabels.has(labelKey))
       issues.push({
         severity: "error",
         code: "DUPLICATE_CHOICE_LABEL",
-        message: `Le choix « ${choice.label} » est répété. Chaque transition doit avoir un libellé propre à son contexte.`,
+        message: `Le choix « ${choice.label} » est proposé deux fois dans la même scène.`,
         sceneId: choice.sourceSceneId,
       });
-    else choiceLabels.set(normalizedLabel, choice.sourceSceneId);
+    else choiceLabels.add(labelKey);
     if (!scenes.has(choice.sourceSceneId))
       issues.push({
         severity: "error",

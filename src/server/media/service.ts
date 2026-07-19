@@ -464,9 +464,16 @@ export async function uploadMedia(
   }
 }
 
-export async function markMediaReviewed(storyId: string, versionId: string) {
+export async function markMediaReviewed(
+  storyId: string,
+  versionId: string,
+  options: { allowPublished?: boolean } = {},
+) {
   const context = getVersionContext(storyId, versionId);
-  if (context.version.status === "published")
+  if (
+    context.version.status === "published" &&
+    options.allowPublished !== true
+  )
     throw new ApiError(
       409,
       "PUBLISHED_VERSION_IMMUTABLE",

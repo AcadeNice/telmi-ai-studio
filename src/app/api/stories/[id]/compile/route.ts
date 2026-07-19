@@ -6,10 +6,12 @@ import { db } from "@/server/db";
 import { storyVersions } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { markMediaReviewed } from "@/server/media/service";
+import { publishStoryVersion } from "@/server/stories/service";
 
 const schema = z.object({
   versionId: z.uuid(),
   mediaReviewed: z.literal(true),
+  publish: z.boolean().default(false),
 });
 
 export async function POST(
@@ -31,11 +33,23 @@ export async function POST(
         "VERSION_NOT_FOUND",
         "Version introuvable pour cette histoire.",
       );
-    await markMediaReviewed(storyId, input.versionId);
-    const job = createCompileJob(input.versionId)!;
+    await markMediaReviewed(storyId, input.versionId, {
+      allowPublished: input.publish,
+    });
+    const job = createCompileJob(input.versionId, {
+      allowPublished: input.publish,
+    })!;
     await runJobStep(job.id, "validate");
     const result = await runJobStep(job.id, "compile");
-    return Response.json({ success: true, jobId: job.id, result });
+    const publication = input.publish
+      ? publishStoryVersion(storyId, input.versionId, true)
+      : null;
+    return Response.json({
+      success: true,
+      jobId: job.id,
+      result,
+      publication,
+    });
   } catch (error) {
     return apiErrorResponse(error);
   }

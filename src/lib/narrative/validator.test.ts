@@ -128,7 +128,7 @@ describe("narrative graph", () => {
     ).toBe(true);
   });
 
-  it("rejects choice labels repeated in different parts of the story", () => {
+  it("allows the same transition label in different scenes", () => {
     const story = structuredClone(validStory);
     story.scenes.push({
       id: "suite",
@@ -147,6 +147,19 @@ describe("narrative graph", () => {
     expect(
       validateNarrativeGraph(story).issues.some(
         (issue) => issue.code === "DUPLICATE_CHOICE_LABEL",
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects duplicate choice labels within the same scene", () => {
+    const story = structuredClone(validStory);
+    story.choices[1]!.label = "  PÀRTAGER ! ";
+
+    expect(
+      validateNarrativeGraph(story).issues.some(
+        (issue) =>
+          issue.code === "DUPLICATE_CHOICE_LABEL" &&
+          issue.sceneId === "intro",
       ),
     ).toBe(true);
   });

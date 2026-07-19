@@ -1759,6 +1759,40 @@ function StoryStudio({
       setBusy("");
     }
   };
+  const recompileAndPublish = async () => {
+    if (
+      version.status === "published" &&
+      !window.confirm(
+        "Le ZIP actuellement disponible restera en ligne pendant la recompilation, puis sera remplacé par le nouveau pack. Continuer ?",
+      )
+    )
+      return;
+    setBusy("recompile-publish");
+    try {
+      await api(`/api/stories/${story.id}/compile`, {
+        method: "POST",
+        body: JSON.stringify({
+          versionId: version.id,
+          mediaReviewed: true,
+          publish: true,
+        }),
+      });
+      onNotice({
+        tone: "ok",
+        text:
+          "Le ZIP a été recompilé et la version du store privé a été mise à jour.",
+      });
+      await loadMedia();
+      onRefresh();
+    } catch (error) {
+      onNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setBusy("");
+    }
+  };
   const saveSceneEdit = async (
     scene: NarrativeScene,
     editedChoices: NarrativeChoice[],
@@ -1918,19 +1952,17 @@ function StoryStudio({
                   : "Générer les médias"}
             </button>
           )}
-          {version.status === "ready" && (
+          {(["ready", "published"] as string[]).includes(version.status) && (
             <button
               className="secondary"
-              onClick={() =>
-                action("publish", () =>
-                  api(
-                    `/api/stories/${story.id}/versions/${version.id}/publish`,
-                    { method: "POST", body: JSON.stringify({ replace: true }) },
-                  ),
-                )
-              }
+              disabled={!!busy}
+              onClick={() => void recompileAndPublish()}
             >
-              Publier dans le store
+              {busy === "recompile-publish"
+                ? "Recompilation…"
+                : version.status === "published"
+                  ? "Recompiler et mettre à jour le store"
+                  : "Recompiler et publier dans le store"}
             </button>
           )}
           {version.status === "published" && (

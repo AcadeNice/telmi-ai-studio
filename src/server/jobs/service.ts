@@ -280,7 +280,10 @@ export function createGenerationJob(versionId: string, overrideBudget = false) {
   return getGenerationJob(id);
 }
 
-export function createCompileJob(versionId: string) {
+export function createCompileJob(
+  versionId: string,
+  options: { allowPublished?: boolean } = {},
+) {
   ensureDatabase();
   const version = db
     .select()
@@ -295,7 +298,14 @@ export function createCompileJob(versionId: string) {
       "MEDIA_REVIEW_REQUIRED",
       "Vérifiez les images et les narrations avant de créer le ZIP.",
     );
-  if (!(["validated", "ready"] as string[]).includes(version.status))
+  const retainPublishedStatus =
+    version.status === "published" && options.allowPublished === true;
+  if (
+    !(
+      retainPublishedStatus ||
+      (["validated", "ready"] as string[]).includes(version.status)
+    )
+  )
     throw new ApiError(
       409,
       "MEDIA_NOT_READY",
@@ -330,7 +340,10 @@ export function createCompileJob(versionId: string) {
         })
         .run();
     tx.update(storyVersions)
-      .set({ status: "generating", updatedAt: now })
+      .set({
+        status: retainPublishedStatus ? "published" : "generating",
+        updatedAt: now,
+      })
       .where(eq(storyVersions.id, versionId))
       .run();
   });
@@ -361,32 +374,34 @@ function recordAsset(
 ) {
   const statPromise = fs.stat(filePath);
   return statPromise.then((stat) => {
-    db.delete(generatedAssets)
-      .where(
-        and(
-          eq(generatedAssets.versionId, versionId),
-          eq(generatedAssets.type, type),
-          sceneKey === null
-            ? sql`${generatedAssets.sceneKey} is null`
-            : eq(generatedAssets.sceneKey, sceneKey),
-        ),
-      )
-      .run();
-    db.insert(generatedAssets)
-      .values({
-        id: randomUUID(),
-        versionId,
-        sceneKey,
-        type,
-        provider,
-        path: filePath,
-        mimeType,
-        bytes: stat.size,
-        metadataJson: metadata ? JSON.stringify(metadata) : null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .run();
+    db.transaction((tx) => {
+      tx.delete(generatedAssets)
+        .where(
+          and(
+            eq(generatedAssets.versionId, versionId),
+            eq(generatedAssets.type, type),
+            sceneKey === null
+              ? sql`${generatedAssets.sceneKey} is null`
+              : eq(generatedAssets.sceneKey, sceneKey),
+          ),
+        )
+        .run();
+      tx.insert(generatedAssets)
+        .values({
+          id: randomUUID(),
+          versionId,
+          sceneKey,
+          type,
+          provider,
+          path: filePath,
+          mimeType,
+          bytes: stat.size,
+          metadataJson: metadata ? JSON.stringify(metadata) : null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .run();
+    });
   });
 }
 
@@ -595,6 +610,7 @@ async function runImages(jobId: string) {
 
 async function runCompile(jobId: string) {
   const { story, version } = jobContext(jobId);
+  const retainPublishedStatus = version.status === "published";
   if (!version.mediaReviewedAt)
     throw new ApiError(
       409,
@@ -656,15 +672,24 @@ async function runCompile(jobId: string) {
     base,
     `${safeFileName(story.title)}-v${version.version}.zip`,
   );
-  await buildTelmiPack({
-    story: narrative,
-    uuid: story.uuid,
-    version: version.version,
-    assetDirectory: assetDir,
-    outputPath: packPath,
-    illustrationMode,
-    ...credits,
-  });
+  const temporaryPackPath = path.join(
+    base,
+    `.${safeFileName(story.title)}-${randomUUID()}.tmp.zip`,
+  );
+  try {
+    await buildTelmiPack({
+      story: narrative,
+      uuid: story.uuid,
+      version: version.version,
+      assetDirectory: assetDir,
+      outputPath: temporaryPackPath,
+      illustrationMode,
+      ...credits,
+    });
+    await fs.rename(temporaryPackPath, packPath);
+  } finally {
+    await fs.rm(temporaryPackPath, { force: true });
+  }
   await recordAsset(
     version.id,
     null,
@@ -675,7 +700,7 @@ async function runCompile(jobId: string) {
   );
   db.update(storyVersions)
     .set({
-      status: "ready",
+      status: retainPublishedStatus ? "published" : "ready",
       packPath,
       coverPath: path.join(assetDir, "cover.png"),
       updatedAt: new Date(),
@@ -817,11 +842,21 @@ export async function runJobStep(jobId: string, step: JobStepName) {
       .from(generationJobs)
       .where(eq(generationJobs.id, jobId))
       .get();
-    if (failedJob)
+    if (failedJob) {
+      const failedVersion = db
+        .select()
+        .from(storyVersions)
+        .where(eq(storyVersions.id, failedJob.versionId))
+        .get();
       db.update(storyVersions)
-        .set({ status: "failed", updatedAt: new Date() })
+        .set({
+          status:
+            failedVersion?.status === "published" ? "published" : "failed",
+          updatedAt: new Date(),
+        })
         .where(eq(storyVersions.id, failedJob.versionId))
         .run();
+    }
     throw error;
   }
 }
