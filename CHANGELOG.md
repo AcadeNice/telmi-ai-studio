@@ -6,7 +6,7 @@
 - histoires versionnées, corbeille récupérable et validation parentale ;
 - génération structurée OpenAI-compatible, images OpenAI et voix ElevenLabs ;
 - validateur de graphe narratif et éditeur liste/React Flow/JSON ;
-- jobs locaux ou orchestrés par n8n avec HMAC, anti-rejeu et idempotence ;
+- file interne séquentielle avec idempotence et reprise après redémarrage ;
 - compilateur et contrôles Telmi, ZIP à dossier racine unique ;
 - bibliothèque, store privé compatible Telmi Sync et rotation de clé ;
 - journaux expurgés, sauvegarde chiffrée et vérification de mise à jour ;

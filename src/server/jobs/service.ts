@@ -22,13 +22,13 @@ import { ApiError } from "@/server/api/response";
 import { generateImage } from "@/server/providers/image";
 import { generateSpeech } from "@/server/providers/elevenlabs";
 import { loadNarrative } from "@/server/stories/service";
+import { writeAppLog } from "@/server/logging/app-log";
 import {
   buildTelmiPack,
   validateAudio,
   validateImage,
 } from "@/server/telmi/pack";
 import { safeFileName, versionDirectory } from "@/server/storage/paths";
-import { signN8nRequest } from "@/server/security/hmac";
 
 export const JOB_STEPS = ["validate", "tts", "images", "compile"] as const;
 export const MEDIA_GENERATION_STEPS = ["validate", "tts", "images"] as const;
@@ -340,26 +340,6 @@ export function getGenerationJob(id: string) {
     ...job,
     steps: db.select().from(jobSteps).where(eq(jobSteps.jobId, id)).all(),
   };
-}
-
-export function failGenerationDispatch(jobId: string, message: string) {
-  const job = db
-    .select()
-    .from(generationJobs)
-    .where(eq(generationJobs.id, jobId))
-    .get();
-  if (!job) return;
-  const now = new Date();
-  db.transaction((tx) => {
-    tx.update(generationJobs)
-      .set({ status: "failed", error: message, updatedAt: now })
-      .where(eq(generationJobs.id, jobId))
-      .run();
-    tx.update(storyVersions)
-      .set({ status: "validated", updatedAt: now })
-      .where(eq(storyVersions.id, job.versionId))
-      .run();
-  });
 }
 
 function recordAsset(
@@ -830,16 +810,80 @@ export async function runJobStep(jobId: string, step: JobStepName) {
   }
 }
 
-export async function runLocalPipeline(jobId: string) {
-  for (const step of MEDIA_GENERATION_STEPS) await runJobStep(jobId, step);
+const scheduledJobs = new Set<string>();
+let internalQueue: Promise<void> = Promise.resolve();
+
+async function runInternalPipeline(jobId: string, startStep?: JobStepName) {
+  const job = getGenerationJob(jobId);
+  if (!job) throw new ApiError(404, "JOB_NOT_FOUND", "Travail introuvable.");
+  const configuredSteps = JOB_STEPS.filter((step) =>
+    job.steps.some((record) => record.step === step),
+  );
+  const firstIncomplete = configuredSteps.findIndex(
+    (step) =>
+      job.steps.find((record) => record.step === step)?.status !== "completed",
+  );
+  const start = startStep
+    ? configuredSteps.indexOf(startStep)
+    : firstIncomplete < 0
+      ? configuredSteps.length
+      : firstIncomplete;
+  if (start < 0)
+    throw new ApiError(404, "STEP_NOT_FOUND", "Étape absente de ce travail.");
+  for (const step of configuredSteps.slice(start))
+    await runJobStep(jobId, step);
+}
+
+export function scheduleInternalPipeline(
+  jobId: string,
+  startStep?: JobStepName,
+) {
+  if (scheduledJobs.has(jobId))
+    return { mode: "internal" as const, queued: false };
+
+  const job = db
+    .select()
+    .from(generationJobs)
+    .where(eq(generationJobs.id, jobId))
+    .get();
+  if (!job) throw new ApiError(404, "JOB_NOT_FOUND", "Travail introuvable.");
+  const now = new Date();
+  db.transaction((tx) => {
+    tx.update(generationJobs)
+      .set({ status: "queued", error: null, updatedAt: now })
+      .where(eq(generationJobs.id, jobId))
+      .run();
+    tx.update(storyVersions)
+      .set({ status: "generating", updatedAt: now })
+      .where(eq(storyVersions.id, job.versionId))
+      .run();
+  });
+
+  scheduledJobs.add(jobId);
+  const task = internalQueue
+    .then(() => runInternalPipeline(jobId, startStep))
+    .catch(async (error) => {
+      try {
+        await writeAppLog("error", "Échec du pipeline de génération interne", {
+          jobId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } catch {
+        // The queue must remain usable even if the log volume is unavailable.
+      }
+    })
+    .finally(() => {
+      scheduledJobs.delete(jobId);
+    });
+  internalQueue = task.then(
+    () => undefined,
+    () => undefined,
+  );
+  return { mode: "internal" as const, queued: true };
 }
 
 export function recoverInterruptedJobs() {
   ensureDatabase();
-  const usesN8n = Boolean(
-    db.select().from(settings).where(eq(settings.id, "primary")).get()
-      ?.n8nWebhookUrl,
-  );
   const interrupted = db
     .select()
     .from(generationJobs)
@@ -854,36 +898,6 @@ export function recoverInterruptedJobs() {
       })
       .where(and(eq(jobSteps.jobId, job.id), eq(jobSteps.status, "running")))
       .run();
-    void (
-      usesN8n ? dispatchGenerationJob(job.id) : runLocalPipeline(job.id)
-    ).catch(() => undefined);
+    scheduleInternalPipeline(job.id);
   }
-}
-
-export async function dispatchGenerationJob(jobId: string) {
-  const config = db
-    .select()
-    .from(settings)
-    .where(eq(settings.id, "primary"))
-    .get();
-  if (!config?.n8nWebhookUrl) {
-    void runLocalPipeline(jobId).catch(() => undefined);
-    return { mode: "local" as const };
-  }
-  const body = JSON.stringify({ jobId, callbackBaseUrl: config.publicUrl });
-  const timestamp = String(Date.now());
-  const signed = signN8nRequest(body, timestamp);
-  const response = await fetch(config.n8nWebhookUrl, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-telmi-timestamp": signed.timestamp,
-      "x-telmi-nonce": signed.nonce,
-      "x-telmi-signature": signed.signature,
-    },
-    body,
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) throw new Error(`n8n webhook: HTTP ${response.status}`);
-  return { mode: "n8n" as const };
 }

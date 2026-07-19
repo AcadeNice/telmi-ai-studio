@@ -11,7 +11,7 @@ Studio familial mono-administrateur pour créer, relire, générer et publier de
 - éditeur liste, graphe React Flow et JSON ;
 - compilation en pack Telmi avec `metadata.json`, `nodes.json`, `notes.json`, médias et ZIP ;
 - bibliothèque et store privé compatible Telmi Sync ;
-- orchestration locale ou via le workflow n8n fourni ;
+- orchestration interne séquentielle avec reprise automatique ;
 - budgets, journaux expurgés, corbeille 30 jours et sauvegardes chiffrées.
 
 ## Lancement Docker
@@ -21,7 +21,6 @@ Prérequis : Docker avec Compose.
 ```bash
 cp .env.example .env
 openssl rand -hex 32 # valeur de APP_ENCRYPTION_KEY
-openssl rand -hex 32 # valeur de N8N_SHARED_SECRET
 docker compose up -d --build
 ```
 
@@ -66,15 +65,11 @@ Après l’installation, ouvrir **Paramètres** :
 
 Les clés sont chiffrées dans SQLite. Elles ne sont jamais renvoyées par l’API.
 
-## n8n
+## Orchestration des générations
 
-1. importer [`n8n/telmi-ai-studio.workflow.json`](n8n/telmi-ai-studio.workflow.json) ;
-2. définir `N8N_SHARED_SECRET` dans l’environnement n8n avec exactement la même valeur que l’application ;
-3. autoriser le module Node natif `crypto` dans les Code nodes avec `NODE_FUNCTION_ALLOW_BUILTIN=crypto` (sur le conteneur principal et, si les task runners sont activés, sur leur environnement) ;
-4. activer le workflow et copier son URL de production dans les paramètres ;
-5. s’assurer que n8n peut atteindre l’URL publique de Telmi AI Studio.
+Telmi AI Studio exécute directement les étapes `validate`, `tts` et `images` dans une file interne séquentielle. Aucun service n8n n’est nécessaire. Les étapes restent idempotentes, leur progression est enregistrée dans SQLite et un travail interrompu reprend automatiquement au démarrage suivant.
 
-Sans webhook n8n, l’application exécute le pipeline localement. Le workflow appelle successivement `validate`, `tts` et `images`. Chaque appel est signé et idempotent. La compilation reste volontairement dans l’application : le parent prévisualise, remplace ou régénère les médias, puis confirme explicitement la création du ZIP.
+Après génération, le parent prévisualise, remplace ou régénère chaque média. La compilation du ZIP reste déclenchée uniquement après cette validation explicite.
 
 ## Store privé Telmi Sync
 

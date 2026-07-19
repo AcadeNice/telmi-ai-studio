@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { ApiError, apiErrorResponse } from "@/server/api/response";
 import { requireMutationSession } from "@/server/auth/session";
-import { getGenerationJob, JOB_STEPS, runJobStep } from "@/server/jobs/service";
+import {
+  getGenerationJob,
+  JOB_STEPS,
+  scheduleInternalPipeline,
+} from "@/server/jobs/service";
 import { readJson } from "@/server/api/response";
 
 const schema = z.object({ step: z.enum(JOB_STEPS) });
@@ -21,10 +25,8 @@ export async function POST(
     const start = configuredSteps.indexOf(input.step);
     if (start < 0)
       throw new ApiError(404, "STEP_NOT_FOUND", "Étape absente de ce travail.");
-    let result: unknown = null;
-    for (const step of configuredSteps.slice(start))
-      result = await runJobStep(id, step);
-    return Response.json({ success: true, result });
+    const dispatch = scheduleInternalPipeline(id, configuredSteps[start]);
+    return Response.json({ success: true, dispatch }, { status: 202 });
   } catch (error) {
     return apiErrorResponse(error);
   }

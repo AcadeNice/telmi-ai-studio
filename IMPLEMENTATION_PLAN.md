@@ -10,7 +10,7 @@ Ce document est un plan d'exécution. Son adoption ne lance aucune étape automa
 
 - Modèle principal : `gpt-5.6-sol`
 - Effort courant : `high`
-- Effort ponctuel `xhigh` : compilateur Telmi, validateur de graphe, sécurité des secrets et callbacks, revue d'architecture
+- Effort ponctuel `xhigh` : compilateur Telmi, validateur de graphe, sécurité des secrets et revue d'architecture
 - Méthode : progression par étapes avec tests et validation à chaque jalon
 - Langue : français
 
@@ -21,7 +21,7 @@ Ce document est un plan d'exécution. Son adoption ne lance aucune étape automa
 - thème clair uniquement ;
 - interface responsive ordinateur et mobile ;
 - aucune génération de médias avant validation parentale ;
-- n8n externe avec workflow JSON exportable ;
+- orchestration interne séquentielle et reprenable ;
 - stockage local sur disque ;
 - base SQLite ;
 - dépôt Forgejo principal avec miroir GitHub ;
@@ -40,15 +40,10 @@ Next.js + TypeScript
 ├── SQLite + Drizzle ORM
 ├── Stockage local des médias
 ├── Adaptateurs fournisseurs IA
+├── File interne de génération
 ├── Validateur narratif
 ├── Compilateur Telmi
 └── API du store privé
-
-n8n externe
-├── Génération du scénario
-├── Génération TTS
-├── Génération d'images
-└── Callback HMAC signé
 ```
 
 ## Étape 0 — Fondation technique
@@ -115,7 +110,7 @@ n8n externe
 - URL publique ;
 - configuration des fournisseurs ;
 - stockage protégé des secrets ;
-- configuration n8n et secret HMAC ;
+- configuration de la file interne de génération ;
 - configuration du store et de son jeton ;
 - tests de connexion.
 
@@ -124,7 +119,7 @@ n8n externe
 - installation depuis une base vide ;
 - authentification et déconnexion ;
 - secrets masqués et absents des réponses API ;
-- callback invalide refusé.
+- travaux persistants et reprenables après redémarrage.
 
 ## Étape 3 — Contrat narratif JSON
 
@@ -181,13 +176,13 @@ n8n externe
 - parcours de toutes les branches ;
 - test réel sur Miyoo Mini Plus.
 
-## Étape 6 — n8n et fournisseurs de médias
+## Étape 6 — Orchestration interne et fournisseurs de médias
 
 ### Travail
 
-- définir le webhook de lancement ;
-- produire le workflow n8n exportable ;
-- sécuriser le callback par HMAC et protection anti-rejeu ;
+- exécuter les travaux dans une file interne séquentielle ;
+- conserver l’état et les étapes en SQLite ;
+- reprendre automatiquement un travail interrompu ;
 - intégrer ElevenLabs et récupérer les voix autorisées ;
 - créer un adaptateur d'images interchangeable ;
 - gérer la régénération sélective ;
@@ -196,7 +191,7 @@ n8n externe
 
 ### Validation
 
-- callback falsifié ou rejoué refusé ;
+- aucune API interne d’orchestration exposée ;
 - régénération d'un seul média ;
 - reprise après erreur ;
 - absence de doublons.
@@ -251,7 +246,7 @@ n8n externe
 - consultation des journaux ;
 - notifications ;
 - vérification des mises à jour ;
-- documentation Docker et n8n ;
+- documentation Docker et orchestration interne ;
 - Forgejo comme dépôt principal ;
 - miroir automatique GitHub ;
 - procédure de migration et rollback.
@@ -282,7 +277,7 @@ n8n externe
 4. Étape 3 — contrat narratif
 5. Étape 4 — validateur de graphe
 6. Étape 5 — compilateur Telmi
-7. Étape 6 — contrat n8n
+7. Étape 6 — orchestration interne
 8. Attendre/importer le design avant la finition de l'étape 8
 
 ## Commande de reprise

@@ -15,7 +15,6 @@ const setupSchema = z.object({
   publicUrl: z.url(),
   monthlyBudgetCents: z.number().int().min(0).max(1_000_000).default(2000),
   storyBudgetCents: z.number().int().min(0).max(100_000).default(300),
-  n8nWebhookUrl: z.url().optional(),
   providers: z
     .array(
       z.object({
@@ -77,7 +76,6 @@ export async function POST(request: Request) {
           storeEnabled: true,
           storeApiKeyHash: hashToken(storeApiKey),
           storeApiKeyEncrypted: encryptSecret(storeApiKey),
-          n8nWebhookUrl: input.n8nWebhookUrl,
           createdAt: now,
           updatedAt: now,
         })

@@ -60,7 +60,6 @@ export const settings = sqliteTable("settings", {
     .default(true),
   storeApiKeyHash: text("store_api_key_hash").notNull(),
   storeApiKeyEncrypted: text("store_api_key_encrypted").notNull(),
-  n8nWebhookUrl: text("n8n_webhook_url"),
   ...timestamps,
 });
 
@@ -255,11 +254,6 @@ export const notifications = sqliteTable("notifications", {
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .notNull()
     .$defaultFn(() => new Date()),
-});
-
-export const n8nNonces = sqliteTable("n8n_nonces", {
-  nonce: text("nonce").primaryKey(),
-  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
 });
 
 export const backups = sqliteTable("backups", {

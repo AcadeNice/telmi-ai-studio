@@ -14,7 +14,6 @@ const updateSchema = z.object({
   monthlyBudgetCents: z.number().int().min(0),
   storyBudgetCents: z.number().int().min(0),
   storeEnabled: z.boolean(),
-  n8nWebhookUrl: z.union([z.url(), z.literal(""), z.null()]).optional(),
   providers: z
     .array(
       z.object({
@@ -73,7 +72,6 @@ export async function PUT(request: Request) {
           monthlyBudgetCents: input.monthlyBudgetCents,
           storyBudgetCents: input.storyBudgetCents,
           storeEnabled: input.storeEnabled,
-          n8nWebhookUrl: input.n8nWebhookUrl || null,
           updatedAt: now,
         })
         .where(eq(settings.id, "primary"))

@@ -2739,7 +2739,6 @@ function SettingsPanel({
     monthlyBudgetCents: number;
     storyBudgetCents: number;
     storeEnabled: boolean;
-    n8nWebhookUrl?: string | null;
     providers: ProviderSettings[];
   };
   const [data, setData] = useState<SettingsData | null>(null);
@@ -2853,15 +2852,7 @@ function SettingsPanel({
         ))}
       </section>
       <section className="page-card">
-        <h2>n8n et store</h2>
-        <Field label="Webhook n8n (facultatif)">
-          <input
-            value={data.n8nWebhookUrl ?? ""}
-            onChange={(e) =>
-              setData({ ...data, n8nWebhookUrl: e.target.value })
-            }
-          />
-        </Field>
+        <h2>Store privé</h2>
         <label className="switch">
           <input
             type="checkbox"

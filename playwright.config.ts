@@ -13,7 +13,6 @@ export default defineConfig({
       DATA_DIR: "data/e2e",
       APP_ENCRYPTION_KEY:
         "1111111111111111111111111111111111111111111111111111111111111111",
-      N8N_SHARED_SECRET: "test-n8n-shared-secret-that-is-long-enough",
       COOKIE_SECURE: "false",
     },
   },
