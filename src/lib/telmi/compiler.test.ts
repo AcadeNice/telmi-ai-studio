@@ -64,9 +64,21 @@ describe("Telmi compiler", () => {
     const { nodes } = compileTelmiDocuments(story, "ffffff-test", 1);
     expect(nodes.actions.a_choices_1).toHaveLength(2);
     expect(nodes.stages.q1_1?.control.autoplay).toBe(false);
+    expect(nodes.actions.a_choice_1_1).toEqual([{ stage: "s2" }]);
+    expect(nodes.actions.a_choice_1_2).toEqual([{ stage: "s3" }]);
     expect(nodes.stages.q1_2?.ok?.action).not.toBe(
       nodes.stages.q1_1?.ok?.action,
     );
+  });
+
+  it("rejects empty actions that would restart a story on Telmi OS", () => {
+    const { nodes } = compileTelmiDocuments(story, "ffffff-test", 1);
+    nodes.actions.a_choice_1_1 = [];
+
+    expect(validateTelmiDocuments(nodes)).toEqual({
+      valid: false,
+      errors: ["a_choice_1_1: action vide."],
+    });
   });
 
   it("omits scene and choice images in cover-only mode", () => {

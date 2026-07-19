@@ -62,9 +62,16 @@ export function compileTelmiDocuments(
         const targetIndex = story.scenes.findIndex(
           (item) => item.id === choice.targetSceneId,
         );
-        const targetAction = `a_scene_${targetIndex + 1}`;
+        const targetStage = sceneKeys.get(choice.targetSceneId);
+        if (targetIndex === -1 || !targetStage) {
+          throw new Error(
+            `Le choix ${choice.id} pointe vers une scène inconnue (${choice.targetSceneId}).`,
+          );
+        }
         const uniqueAction = `a_choice_${sceneIndex + 1}_${choiceIndex + 1}`;
-        actions[uniqueAction] = actions[targetAction] ?? [];
+        // Point directly to the target stage. The target scene action may not
+        // have been created yet when the destination follows this scene.
+        actions[uniqueAction] = [{ stage: targetStage }];
         stages[choiceStage] = {
           image:
             illustrationMode === "cover"
@@ -167,6 +174,8 @@ export function validateTelmiDocuments(nodes: TelmiNodes) {
       errors.push(`${stageKey}: ok pointe vers une action inconnue.`);
   }
   for (const [actionKey, entries] of Object.entries(nodes.actions)) {
+    if (actionKey !== "backChildAction" && entries.length === 0)
+      errors.push(`${actionKey}: action vide.`);
     for (const entry of entries)
       if (!nodes.stages[entry.stage])
         errors.push(`${actionKey}: scène ${entry.stage} inconnue.`);
