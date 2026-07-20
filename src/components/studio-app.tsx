@@ -2246,6 +2246,14 @@ function StoryStudio({
             running={!["completed", "failed", "cancelled"].includes(job.status)}
             defaultOpen={job.status === "failed"}
             lines={[
+              ...(job.currentStep
+                ? [
+                    {
+                      message: job.currentStep,
+                      tone: "normal" as const,
+                    },
+                  ]
+                : []),
               ...(job.steps ?? []).map((step) => ({
                 at: step.updatedAt ?? step.createdAt,
                 message: `${step.step} · ${step.status}${step.attempts ? ` · tentative ${step.attempts}` : ""}${step.error ? ` · ${step.error}` : ""}`,

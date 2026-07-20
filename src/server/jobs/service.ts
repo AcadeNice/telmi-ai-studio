@@ -555,19 +555,54 @@ async function runImages(jobId: string) {
     illustrationMode === "every-scene"
       ? narrative.scenes.filter((scene) => scene.imagePrompt)
       : [];
-  const choiceImages =
-    illustrationMode === "cover" ? [] : narrative.choices;
+  const choiceImages = illustrationMode === "cover" ? [] : narrative.choices;
   const totalGenerations = 1 + sceneImages.length + choiceImages.length;
   let completedGenerations = 0;
+  const progressPercent = () =>
+    Math.min(
+      99,
+      67 + Math.round((completedGenerations / totalGenerations) * 32),
+    );
+  const generateTrackedImage = async (
+    prompt: string,
+    filePath: string,
+    choiceNavigation = false,
+  ) => {
+    const position = completedGenerations + 1;
+    const startedAt = Date.now();
+    const updateHeartbeat = () => {
+      const elapsedSeconds = Math.max(
+        0,
+        Math.floor((Date.now() - startedAt) / 1000),
+      );
+      const elapsed =
+        elapsedSeconds < 60
+          ? `${elapsedSeconds} s`
+          : `${Math.floor(elapsedSeconds / 60)} min ${elapsedSeconds % 60} s`;
+      db.update(generationJobs)
+        .set({
+          currentStep: `Image ${position}/${totalGenerations} en cours · ${elapsed}`,
+          progress: progressPercent(),
+          updatedAt: new Date(),
+        })
+        .where(eq(generationJobs.id, jobId))
+        .run();
+    };
+    updateHeartbeat();
+    const heartbeat = setInterval(updateHeartbeat, 5_000);
+    heartbeat.unref();
+    try {
+      return await generateImage(prompt, filePath, choiceNavigation);
+    } finally {
+      clearInterval(heartbeat);
+    }
+  };
   const reportProgress = () => {
     completedGenerations += 1;
     db.update(generationJobs)
       .set({
-        currentStep: `images (${completedGenerations}/${totalGenerations})`,
-        progress: Math.min(
-          99,
-          67 + Math.round((completedGenerations / totalGenerations) * 32),
-        ),
+        currentStep: `Images terminées : ${completedGenerations}/${totalGenerations}`,
+        progress: progressPercent(),
         updatedAt: new Date(),
       })
       .where(eq(generationJobs.id, jobId))
@@ -575,7 +610,7 @@ async function runImages(jobId: string) {
   };
 
   if (!(await reusableImage(version.id, "cover", null, coverPath))) {
-    await generateImage(coverPrompt, coverPath);
+    await generateTrackedImage(coverPrompt, coverPath);
     await recordAsset(
       version.id,
       null,
@@ -616,7 +651,7 @@ async function runImages(jobId: string) {
       parameters.childName,
     );
     if (!(await reusableImage(version.id, "image", scene.id, file))) {
-      await generateImage(prompt, file);
+      await generateTrackedImage(prompt, file);
       await recordAsset(
         version.id,
         scene.id,
@@ -644,7 +679,7 @@ async function runImages(jobId: string) {
     );
     const sceneKey = `choice:${choice.id}`;
     if (!(await reusableImage(version.id, "image", sceneKey, file))) {
-      await generateImage(
+      await generateTrackedImage(
         prompt,
         file,
         isMultipleChoiceImage(narrative, choice),
