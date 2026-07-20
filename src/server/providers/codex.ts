@@ -8,7 +8,10 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { ApiError } from "@/server/api/response";
-import { narrativeJsonSchema } from "@/lib/narrative/schema";
+import {
+  narrativeCodexJsonSchema,
+  normalizeCodexNarrativeOutput,
+} from "@/lib/narrative/schema";
 
 const execFileAsync = promisify(execFile);
 const CODEX_HOME = process.env.CODEX_HOME ?? "/data/codex-home";
@@ -179,7 +182,7 @@ export async function generateNarrativeWithCodex(
   const outputPath = path.join("/tmp", `telmi-codex-output-${id}.json`);
   await fs.writeFile(
     schemaPath,
-    JSON.stringify(narrativeJsonSchema.schema),
+    JSON.stringify(narrativeCodexJsonSchema),
     "utf8",
   );
   const prompt = `${systemPrompt}\n\nDemande du parent :\n${userPrompt}\n\nRetourne uniquement le scénario JSON demandé. N’utilise aucun outil, aucune commande et aucune recherche.`;
@@ -235,7 +238,9 @@ export async function generateNarrativeWithCodex(
       });
       child.stdin.end(prompt);
     });
-    return JSON.parse(await fs.readFile(outputPath, "utf8")) as unknown;
+    return normalizeCodexNarrativeOutput(
+      JSON.parse(await fs.readFile(outputPath, "utf8")) as unknown,
+    );
   } finally {
     await Promise.all([
       fs.rm(schemaPath, { force: true }),
@@ -327,10 +332,14 @@ export async function generateImageWithCodex(
         .catch(() => []);
       for (const directory of sessionDirectories) {
         if (!directory.isDirectory()) continue;
-        const directoryPath = path.join(generatedImagesDirectory, directory.name);
+        const directoryPath = path.join(
+          generatedImagesDirectory,
+          directory.name,
+        );
         const files = await fs.readdir(directoryPath, { withFileTypes: true });
         for (const file of files) {
-          if (!file.isFile() || !/\.(png|jpe?g|webp)$/i.test(file.name)) continue;
+          if (!file.isFile() || !/\.(png|jpe?g|webp)$/i.test(file.name))
+            continue;
           const candidatePath = path.join(directoryPath, file.name);
           const stat = await fs.stat(candidatePath);
           if (stat.mtimeMs >= generationStartedAt - 5_000)

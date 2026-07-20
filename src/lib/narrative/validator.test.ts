@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  narrativeCodexJsonSchema,
   narrativeJsonSchema,
   narrativeStorySchema,
+  normalizeCodexNarrativeOutput,
   type NarrativeStory,
 } from "./schema";
 import {
@@ -69,6 +71,43 @@ describe("narrative graph", () => {
       "maxItems",
     ])
       expect(encoded).not.toContain(`"${unsupportedConstraint}"`);
+  });
+
+  it("makes every Codex structured-output property required", () => {
+    const assertAllPropertiesRequired = (schema: unknown): void => {
+      if (!schema || typeof schema !== "object" || Array.isArray(schema))
+        return;
+      const value = schema as Record<string, unknown>;
+      if (value.properties && typeof value.properties === "object") {
+        const properties = Object.keys(value.properties);
+        expect(value.required).toEqual(properties);
+        for (const child of Object.values(
+          value.properties as Record<string, unknown>,
+        ))
+          assertAllPropertiesRequired(child);
+      }
+      if (value.items) assertAllPropertiesRequired(value.items);
+    };
+    assertAllPropertiesRequired(narrativeCodexJsonSchema);
+  });
+
+  it("removes nullable Codex placeholders before business validation", () => {
+    const output = structuredClone(validStory) as unknown as Record<
+      string,
+      unknown
+    >;
+    output.moral = null;
+    output.scenes = (output.scenes as Array<Record<string, unknown>>).map(
+      (scene) => ({
+        ...scene,
+        imagePrompt: "Une illustration sans texte.",
+        voiceId: null,
+        position: null,
+      }),
+    );
+    expect(
+      narrativeStorySchema.parse(normalizeCodexNarrativeOutput(output)),
+    ).toMatchObject(validStory);
   });
 
   it("accepts a complete branching story", () => {
@@ -158,8 +197,7 @@ describe("narrative graph", () => {
     expect(
       validateNarrativeGraph(story).issues.some(
         (issue) =>
-          issue.code === "DUPLICATE_CHOICE_LABEL" &&
-          issue.sceneId === "intro",
+          issue.code === "DUPLICATE_CHOICE_LABEL" && issue.sceneId === "intro",
       ),
     ).toBe(true);
   });

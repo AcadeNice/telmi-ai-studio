@@ -151,3 +151,95 @@ export const narrativeJsonSchema = {
     ],
   },
 };
+
+// Codex uses OpenAI strict structured outputs. In that dialect every property
+// must appear in `required`; fields that remain optional in the application are
+// represented as nullable and removed before Zod business validation.
+export const narrativeCodexJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    schemaVersion: { type: "string", enum: ["1.0"] },
+    title: { type: "string" },
+    description: { type: "string" },
+    age: { type: "integer" },
+    targetDurationSeconds: { type: "integer" },
+    startSceneId: { type: "string" },
+    moral: { type: ["string", "null"] },
+    scenes: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "string" },
+          type: { type: "string", enum: ["narrative", "choice", "ending"] },
+          title: { type: "string" },
+          text: { type: "string" },
+          imagePrompt: { type: "string" },
+          voiceId: { type: ["string", "null"] },
+          position: {
+            type: ["object", "null"],
+            additionalProperties: false,
+            properties: {
+              x: { type: "number" },
+              y: { type: "number" },
+            },
+            required: ["x", "y"],
+          },
+        },
+        required: [
+          "id",
+          "type",
+          "title",
+          "text",
+          "imagePrompt",
+          "voiceId",
+          "position",
+        ],
+      },
+    },
+    choices: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "string" },
+          sourceSceneId: { type: "string" },
+          label: { type: "string" },
+          targetSceneId: { type: "string" },
+          order: { type: "integer" },
+        },
+        required: ["id", "sourceSceneId", "label", "targetSceneId", "order"],
+      },
+    },
+  },
+  required: [
+    "schemaVersion",
+    "title",
+    "description",
+    "age",
+    "targetDurationSeconds",
+    "startSceneId",
+    "moral",
+    "scenes",
+    "choices",
+  ],
+};
+
+export function normalizeCodexNarrativeOutput(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const story = { ...(value as Record<string, unknown>) };
+  if (story.moral === null) delete story.moral;
+  if (Array.isArray(story.scenes))
+    story.scenes = story.scenes.map((scene) => {
+      if (!scene || typeof scene !== "object" || Array.isArray(scene))
+        return scene;
+      const normalized = { ...(scene as Record<string, unknown>) };
+      if (normalized.voiceId === null) delete normalized.voiceId;
+      if (normalized.position === null) delete normalized.position;
+      return normalized;
+    });
+  return story;
+}
