@@ -17,13 +17,54 @@ const voices = [
     voice_id: PIPER_DEFAULT_VOICE,
     name: "Béatrice — Français (Piper local)",
     category: "local",
-    labels: { language: "fr", accent: "France", provider: "Piper" },
+    labels: {
+      language: "fr",
+      accent: "France",
+      provider: "Piper",
+      quality: "Telmi Sync",
+    },
+  },
+  {
+    voice_id: "fr_FR-gilles-low",
+    name: "Gilles — Français (qualité basse)",
+    category: "local",
+    labels: { language: "fr", provider: "Piper", quality: "low" },
+  },
+  {
+    voice_id: "fr_FR-mls-medium",
+    name: "MLS — Français (qualité moyenne)",
+    category: "local",
+    labels: { language: "fr", provider: "Piper", quality: "medium" },
+  },
+  {
+    voice_id: "fr_FR-mls_1840-low",
+    name: "MLS 1840 — Français (qualité basse)",
+    category: "local",
+    labels: { language: "fr", provider: "Piper", quality: "low" },
+  },
+  {
+    voice_id: "fr_FR-siwis-low",
+    name: "Siwis — Français (qualité basse)",
+    category: "local",
+    labels: { language: "fr", provider: "Piper", quality: "low" },
   },
   {
     voice_id: "fr_FR-siwis-medium",
-    name: "Siwis — Français (Piper local)",
+    name: "Siwis — Français (qualité moyenne)",
     category: "local",
-    labels: { language: "fr", accent: "France", provider: "Piper" },
+    labels: { language: "fr", provider: "Piper", quality: "medium" },
+  },
+  {
+    voice_id: "fr_FR-tom-medium",
+    name: "Tom — Français (qualité moyenne)",
+    category: "local",
+    labels: { language: "fr", provider: "Piper", quality: "medium" },
+  },
+  {
+    voice_id: "fr_FR-upmc-medium",
+    name: "UPMC — Français (qualité moyenne)",
+    category: "local",
+    labels: { language: "fr", provider: "Piper", quality: "medium" },
   },
 ] as const;
 

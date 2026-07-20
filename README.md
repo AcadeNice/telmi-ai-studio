@@ -62,7 +62,9 @@ Après l’installation, ouvrir **Paramètres** :
 - texte : OpenRouter par défaut, ou toute API OpenAI-compatible ;
 - images : OpenAI Images (`gpt-image-1` par défaut) ;
 - voix : Piper local sans clé API (`fr_FR-beatrice` par défaut, comme Telmi
-  Sync, avec `fr_FR-siwis-medium` en alternative) ; ElevenLabs reste
+  Sync) avec toutes les variantes françaises officielles disponibles : Gilles,
+  MLS, MLS 1840, Siwis, Tom et UPMC en qualité basse ou moyenne. Piper ne publie
+  actuellement aucune variante française en qualité haute. ElevenLabs reste
   disponible en option (`eleven_multilingual_v2`). Les sorties sont normalisées
   en MP3 mono 44,1 kHz à 128 kb/s pour Telmi.
 

@@ -20,7 +20,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 RUN python3 -m venv /opt/piper \
     && /opt/piper/bin/pip install --no-cache-dir piper-tts==1.4.2 \
     && mkdir -p /opt/piper/voices \
-    && /opt/piper/bin/python -m piper.download_voices --data-dir /opt/piper/voices fr_FR-siwis-medium \
+    && /opt/piper/bin/python -m piper.download_voices --data-dir /opt/piper/voices \
+      fr_FR-gilles-low \
+      fr_FR-mls-medium \
+      fr_FR-mls_1840-low \
+      fr_FR-siwis-low \
+      fr_FR-siwis-medium \
+      fr_FR-tom-medium \
+      fr_FR-upmc-medium \
     && curl -fsSL https://raw.githubusercontent.com/DantSu/Telmi-Sync/master/extraResources/piper/voices/fr_FR-beatrice.onnx -o /opt/piper/voices/fr_FR-beatrice.onnx \
     && curl -fsSL https://raw.githubusercontent.com/DantSu/Telmi-Sync/master/extraResources/piper/voices/fr_FR-beatrice.onnx.json -o /opt/piper/voices/fr_FR-beatrice.onnx.json
 ENV PIPER_PYTHON=/opt/piper/bin/python PIPER_VOICE_DIR=/opt/piper/voices

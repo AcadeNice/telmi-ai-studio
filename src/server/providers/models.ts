@@ -70,9 +70,32 @@ export async function listProviderModels(input: {
         description: "Voix Piper utilisée par défaut dans Telmi Sync.",
       },
       {
+        id: "fr_FR-gilles-low",
+        name: "Gilles — qualité basse",
+      },
+      {
+        id: "fr_FR-mls-medium",
+        name: "MLS — qualité moyenne",
+      },
+      {
+        id: "fr_FR-mls_1840-low",
+        name: "MLS 1840 — qualité basse",
+      },
+      {
+        id: "fr_FR-siwis-low",
+        name: "Siwis — qualité basse",
+      },
+      {
         id: "fr_FR-siwis-medium",
-        name: "Siwis — Français (local)",
-        description: "Voix Piper française alternative.",
+        name: "Siwis — qualité moyenne",
+      },
+      {
+        id: "fr_FR-tom-medium",
+        name: "Tom — qualité moyenne",
+      },
+      {
+        id: "fr_FR-upmc-medium",
+        name: "UPMC — qualité moyenne",
       },
     ];
   const baseUrl = providerBaseUrl(input.preset, input.baseUrl);

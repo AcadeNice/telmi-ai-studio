@@ -1428,6 +1428,7 @@ function formatVoiceLabel(voice: TtsVoice) {
   const details = [
     voice.category ? (categories[voice.category] ?? voice.category) : null,
     voice.labels?.language,
+    voice.labels?.quality,
     voice.labels?.accent,
     voice.labels?.gender,
   ].filter((value, index, list) => value && list.indexOf(value) === index);
