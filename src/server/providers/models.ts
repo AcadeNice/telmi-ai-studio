@@ -1,5 +1,6 @@
 import { ApiError } from "@/server/api/response";
 import type { ProviderType } from "./config";
+import { listCodexTextModels } from "./codex";
 
 export type ProviderPreset =
   | "openrouter"
@@ -74,13 +75,7 @@ export async function listProviderModels(input: {
             description: "Génération via le skill officiel $imagegen.",
           },
         ]
-      : [
-          {
-            id: "gpt-5.6-sol",
-            name: "GPT-5.6 Sol — abonnement Codex",
-            description: "Modèle Codex recommandé pour générer le scénario.",
-          },
-        ];
+      : listCodexTextModels();
   if (input.preset === "piper")
     return [
       {

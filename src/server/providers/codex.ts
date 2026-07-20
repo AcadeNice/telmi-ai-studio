@@ -39,6 +39,47 @@ function codexEnvironment() {
   return { ...process.env, CODEX_HOME, NO_COLOR: "1", TERM: "dumb" };
 }
 
+export async function listCodexTextModels() {
+  const cachePath = path.join(CODEX_HOME, "models_cache.json");
+  const fallback = [
+    {
+      id: "gpt-5.6-sol",
+      name: "GPT-5.6 Sol",
+      description: "Modèle Codex le plus capable pour les scénarios complexes.",
+    },
+  ];
+  try {
+    const payload = JSON.parse(await fs.readFile(cachePath, "utf8")) as {
+      models?: Array<{
+        slug?: unknown;
+        display_name?: unknown;
+        description?: unknown;
+        visibility?: unknown;
+      }>;
+    };
+    const list = (payload.models ?? []).flatMap((model) =>
+      model.visibility === "list" && typeof model.slug === "string"
+        ? [
+            {
+              id: model.slug,
+              name:
+                typeof model.display_name === "string"
+                  ? model.display_name
+                  : model.slug,
+              description:
+                typeof model.description === "string"
+                  ? model.description
+                  : undefined,
+            },
+          ]
+        : [],
+    );
+    return list.length ? list : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function getCodexLoginStatus() {
   await fs.mkdir(CODEX_HOME, { recursive: true });
   try {

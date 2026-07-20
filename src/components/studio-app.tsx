@@ -3481,14 +3481,23 @@ function ProviderSettingsCard({
         </p>
       )}
       {provider.type === "text" && preset === "codex" && (
-        <CodexConnection api={api} />
+        <>
+          <CodexConnection api={api} />
+          <p className="provider-note">
+            Sol privilégie la qualité, Terra l’équilibre, Luna la rapidité et
+            la légèreté. La liste vient directement des modèles disponibles
+            pour ton compte ChatGPT dans Codex.
+          </p>
+        </>
       )}
       {provider.type === "image" && preset === "codex" && (
         <>
           <CodexConnection api={api} />
           <p className="provider-note">
             Les illustrations utilisent le skill officiel $imagegen et les
-            limites incluses dans ton abonnement Codex.
+            limites incluses dans ton abonnement Codex. GPT Image 2 est le seul
+            moteur d’image actuellement exposé par ce skill ; le modèle Codex
+            qui orchestre sa génération n’est pas un second moteur d’image.
           </p>
         </>
       )}
