@@ -20,7 +20,7 @@ const setupSchema = z.object({
       z.object({
         type: z.enum(["text", "image", "tts"]),
         provider: z.string().min(1),
-        apiKey: z.string().min(1),
+        apiKey: z.string().optional(),
         baseUrl: z.url().optional(),
         model: z.string().optional(),
       }),
@@ -81,7 +81,20 @@ export async function POST(request: Request) {
           updatedAt: now,
         })
         .run();
-      for (const provider of input.providers)
+      const providers = input.providers.some(
+        (provider) => provider.type === "tts",
+      )
+        ? input.providers
+        : [
+            ...input.providers,
+            {
+              type: "tts" as const,
+              provider: "piper",
+              apiKey: "",
+              model: "fr_FR-beatrice",
+            },
+          ];
+      for (const provider of providers)
         tx.insert(providerConfigurations)
           .values({
             id: randomUUID(),
@@ -89,7 +102,7 @@ export async function POST(request: Request) {
             provider: provider.provider,
             baseUrl: provider.baseUrl,
             model: provider.model,
-            encryptedApiKey: encryptSecret(provider.apiKey),
+            encryptedApiKey: encryptSecret(provider.apiKey ?? ""),
             enabled: true,
             createdAt: now,
             updatedAt: now,

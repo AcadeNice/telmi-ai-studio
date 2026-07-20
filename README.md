@@ -7,7 +7,7 @@ Studio familial mono-administrateur pour créer, relire, générer et publier de
 - assistant de création en cinq étapes ;
 - scénario JSON structuré via OpenRouter, OpenAI ou une API compatible OpenAI ;
 - validation du graphe et validation explicite du parent avant les médias ;
-- narration ElevenLabs et illustrations OpenAI ;
+- narration locale Piper par défaut, ElevenLabs en option, et illustrations OpenAI ;
 - éditeur liste, graphe React Flow et JSON ;
 - compilation en pack Telmi avec `metadata.json`, `nodes.json`, `notes.json`, médias et ZIP ;
 - bibliothèque et store privé compatible Telmi Sync ;
@@ -61,7 +61,10 @@ Après l’installation, ouvrir **Paramètres** :
 
 - texte : OpenRouter par défaut, ou toute API OpenAI-compatible ;
 - images : OpenAI Images (`gpt-image-1` par défaut) ;
-- voix : ElevenLabs (`eleven_multilingual_v2` par défaut).
+- voix : Piper local sans clé API (`fr_FR-beatrice` par défaut, comme Telmi
+  Sync, avec `fr_FR-siwis-medium` en alternative) ; ElevenLabs reste
+  disponible en option (`eleven_multilingual_v2`). Les sorties sont normalisées
+  en MP3 mono 44,1 kHz à 128 kb/s pour Telmi.
 
 Les clés sont chiffrées dans SQLite. Elles ne sont jamais renvoyées par l’API.
 

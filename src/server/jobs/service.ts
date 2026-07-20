@@ -28,7 +28,8 @@ import {
 } from "@/server/db/schema";
 import { ApiError } from "@/server/api/response";
 import { generateImage } from "@/server/providers/image";
-import { generateSpeech } from "@/server/providers/elevenlabs";
+import { generateSpeech } from "@/server/providers/tts";
+import { getProviderConfig } from "@/server/providers/config";
 import { loadNarrative } from "@/server/stories/service";
 import { writeAppLog } from "@/server/logging/app-log";
 import {
@@ -427,7 +428,8 @@ async function runTts(jobId: string) {
     defaultVoiceId?: string;
   };
   if (!parameters.defaultVoiceId)
-    throw new Error("Aucune voix ElevenLabs n’est sélectionnée.");
+    throw new Error("Aucune voix de narration n’est sélectionnée.");
+  const ttsProvider = getProviderConfig("tts").provider;
   const base = path.join(versionDirectory(story.id, version.version), "assets");
   const audioDir = path.join(base, "audios");
   const work: Array<Promise<unknown>> = [];
@@ -441,7 +443,7 @@ async function runTts(jobId: string) {
     version.id,
     null,
     "title_audio",
-    "elevenlabs",
+    ttsProvider,
     path.join(base, "title.mp3"),
     "audio/mpeg",
     {
@@ -464,7 +466,7 @@ async function runTts(jobId: string) {
         version.id,
         scene.id,
         "audio",
-        "elevenlabs",
+        ttsProvider,
         file,
         "audio/mpeg",
         {
@@ -485,7 +487,7 @@ async function runTts(jobId: string) {
         version.id,
         `choice:${choice.id}`,
         "audio",
-        "elevenlabs",
+        ttsProvider,
         file,
         "audio/mpeg",
         {
@@ -500,10 +502,12 @@ async function runTts(jobId: string) {
   await Promise.all(work);
   recordUsage(
     version.id,
-    "elevenlabs",
+    ttsProvider,
     "tts",
     characters,
-    Math.max(1, Math.ceil((characters / 1000) * 30)),
+    ttsProvider.toLowerCase() === "piper"
+      ? 0
+      : Math.max(1, Math.ceil((characters / 1000) * 30)),
   );
   return { generated: narrative.scenes.length + narrative.choices.length + 1 };
 }

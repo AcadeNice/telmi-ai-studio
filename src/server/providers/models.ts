@@ -7,6 +7,7 @@ export type ProviderPreset =
   | "mistral"
   | "groq"
   | "elevenlabs"
+  | "piper"
   | "custom";
 
 export type ProviderModel = {
@@ -49,6 +50,7 @@ export function inferProviderPreset(
     // A custom URL is validated by the API schema before use.
   }
   if (type === "tts" && normalized === "elevenlabs") return "elevenlabs";
+  if (type === "tts" && normalized === "piper") return "piper";
   if (["openrouter", "openai", "mistral", "groq"].includes(normalized))
     return normalized as ProviderPreset;
   return "custom";
@@ -60,6 +62,19 @@ export async function listProviderModels(input: {
   apiKey?: string;
   baseUrl?: string | null;
 }) {
+  if (input.preset === "piper")
+    return [
+      {
+        id: "fr_FR-beatrice",
+        name: "Béatrice — Français (local)",
+        description: "Voix Piper utilisée par défaut dans Telmi Sync.",
+      },
+      {
+        id: "fr_FR-siwis-medium",
+        name: "Siwis — Français (local)",
+        description: "Voix Piper française alternative.",
+      },
+    ];
   const baseUrl = providerBaseUrl(input.preset, input.baseUrl);
   if (!baseUrl)
     throw new ApiError(

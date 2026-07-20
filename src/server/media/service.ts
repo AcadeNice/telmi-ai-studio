@@ -17,7 +17,7 @@ import type { CreationParameters } from "@/lib/narrative/schema";
 import { db, ensureDatabase } from "@/server/db";
 import { generatedAssets, stories, storyVersions } from "@/server/db/schema";
 import { recordUsage } from "@/server/jobs/service";
-import { generateSpeech } from "@/server/providers/elevenlabs";
+import { generateSpeech } from "@/server/providers/tts";
 import { getProviderConfig } from "@/server/providers/config";
 import { generateImage } from "@/server/providers/image";
 import { loadNarrative } from "@/server/stories/service";
@@ -373,7 +373,9 @@ export async function regenerateMedia(
         provider,
         "tts-regeneration",
         text.length,
-        Math.max(1, Math.ceil((text.length / 1000) * 30)),
+        provider.toLowerCase() === "piper"
+          ? 0
+          : Math.max(1, Math.ceil((text.length / 1000) * 30)),
       );
     }
     await invalidateCompiledPack(context);
@@ -470,10 +472,7 @@ export async function markMediaReviewed(
   options: { allowPublished?: boolean } = {},
 ) {
   const context = getVersionContext(storyId, versionId);
-  if (
-    context.version.status === "published" &&
-    options.allowPublished !== true
-  )
+  if (context.version.status === "published" && options.allowPublished !== true)
     throw new ApiError(
       409,
       "PUBLISHED_VERSION_IMMUTABLE",

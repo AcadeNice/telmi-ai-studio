@@ -79,7 +79,7 @@ type DashboardSummary = {
   monthlySpentCents: number;
   monthlyBudgetCents: number;
 };
-type ElevenLabsVoice = {
+type TtsVoice = {
   voice_id: string;
   name: string;
   category?: string;
@@ -760,7 +760,7 @@ function CreationWizard({
     existingStory?.description ?? "",
   );
   const [busy, setBusy] = useState(false);
-  const [voices, setVoices] = useState<ElevenLabsVoice[]>([]);
+  const [voices, setVoices] = useState<TtsVoice[]>([]);
   const [voicesStatus, setVoicesStatus] = useState<
     "loading" | "ready" | "error"
   >("loading");
@@ -770,10 +770,19 @@ function CreationWizard({
     setVoicesStatus("loading");
     setVoicesError("");
     try {
-      const result = await api<{ list: ElevenLabsVoice[] }>(
-        "/api/providers/voices",
-      );
+      const result = await api<{ list: TtsVoice[] }>("/api/providers/voices");
       setVoices(result.list);
+      const defaultVoice = result.list[0];
+      if (defaultVoice)
+        setParams((current) =>
+          current.defaultVoiceId
+            ? current
+            : {
+                ...current,
+                defaultVoiceId: defaultVoice.voice_id,
+                defaultVoiceName: defaultVoice.name,
+              },
+        );
       setVoicesStatus("ready");
     } catch (error) {
       setVoicesStatus("error");
@@ -1142,7 +1151,7 @@ function CreationWizard({
                   <option value="all">Toutes les langues</option>
                 </select>
               </Field>
-              <Field label="Voix ElevenLabs">
+              <Field label="Voix de narration">
                 <select
                   value={params.defaultVoiceId ?? ""}
                   onChange={(e) => {
@@ -1383,7 +1392,7 @@ function ToggleCard({
   );
 }
 
-function isCustomVoice(voice: ElevenLabsVoice) {
+function isCustomVoice(voice: TtsVoice) {
   return voice.category === "cloned" || voice.category === "generated";
 }
 
@@ -1409,7 +1418,7 @@ function formatVoiceLanguage(language: string) {
   return commonLanguages[language] ?? language.toUpperCase();
 }
 
-function formatVoiceLabel(voice: ElevenLabsVoice) {
+function formatVoiceLabel(voice: TtsVoice) {
   const categories: Record<string, string> = {
     cloned: "clonée",
     generated: "générée",
@@ -2875,6 +2884,7 @@ type ProviderPreset =
   | "mistral"
   | "groq"
   | "elevenlabs"
+  | "piper"
   | "custom";
 type ProviderSettings = {
   type: ProviderType;
@@ -2908,6 +2918,7 @@ const providerChoices: Record<
     { id: "custom", label: "Personnalisé" },
   ],
   tts: [
+    { id: "piper", label: "Piper local (gratuit)" },
     { id: "elevenlabs", label: "ElevenLabs" },
     { id: "custom", label: "Personnalisé (compatible ElevenLabs)" },
   ],
@@ -2932,6 +2943,10 @@ const providerDefaults: Record<
   elevenlabs: {
     baseUrl: "https://api.elevenlabs.io/v1",
     model: "eleven_multilingual_v2",
+  },
+  piper: {
+    baseUrl: "",
+    model: "fr_FR-beatrice",
   },
 };
 
@@ -2976,7 +2991,7 @@ function SettingsPanel({
           const saved = value.providers.find((item) => item.type === type);
           const fallbackPreset: Exclude<ProviderPreset, "custom"> =
             type === "tts"
-              ? "elevenlabs"
+              ? "piper"
               : type === "image"
                 ? "openai"
                 : "openrouter";
@@ -3230,7 +3245,7 @@ function ProviderSettingsCard({
       if (
         !active ||
         (preset === "custom" && !provider.baseUrl) ||
-        (preset !== "openrouter" && !provider.configured)
+        (preset !== "openrouter" && preset !== "piper" && !provider.configured)
       )
         return;
       setCatalog((current) => ({
@@ -3381,7 +3396,12 @@ function ProviderSettingsCard({
             </select>
           )}
         </Field>
-        {preset === "custom" ? (
+        {preset === "piper" ? (
+          <div className="provider-endpoint">
+            <small>Exécution</small>
+            <code>Locale sur ce serveur — aucune clé API</code>
+          </div>
+        ) : preset === "custom" ? (
           <Field label="URL API personnalisée">
             <input
               type="url"
@@ -3396,14 +3416,16 @@ function ProviderSettingsCard({
             <code>{effectiveBaseUrl}</code>
           </div>
         )}
-        <Field label="Clé API">
-          <input
-            type="password"
-            value={provider.apiKey ?? ""}
-            onChange={(event) => onChange({ apiKey: event.target.value })}
-            placeholder="Laisser vide pour conserver la clé enregistrée"
-          />
-        </Field>
+        {preset !== "piper" && (
+          <Field label="Clé API">
+            <input
+              type="password"
+              value={provider.apiKey ?? ""}
+              onChange={(event) => onChange({ apiKey: event.target.value })}
+              placeholder="Laisser vide pour conserver la clé enregistrée"
+            />
+          </Field>
+        )}
       </div>
       <div className="provider-catalog-status">
         <button
@@ -3432,6 +3454,12 @@ function ProviderSettingsCard({
           Seuls les modèles ElevenLabs capables de synthèse vocale sont listés.
           Les voix réellement disponibles dans votre compte apparaîtront dans
           l’assistant de création.
+        </p>
+      )}
+      {provider.type === "tts" && preset === "piper" && (
+        <p className="provider-note">
+          Piper génère la narration directement sur votre serveur, sans quota ni
+          coût de fournisseur. Béatrice est la voix proposée par défaut.
         </p>
       )}
     </div>

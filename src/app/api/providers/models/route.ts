@@ -18,6 +18,7 @@ const schema = z.object({
     "mistral",
     "groq",
     "elevenlabs",
+    "piper",
     "custom",
   ]),
   apiKey: z.string().trim().optional(),
