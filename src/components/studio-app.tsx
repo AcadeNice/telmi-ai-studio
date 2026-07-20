@@ -3460,7 +3460,7 @@ function ProviderSettingsCard({
         {catalog.status === "ready" && (
           <span>
             {catalog.list.length} modèle{catalog.list.length > 1 ? "s" : ""}
-            compatible{catalog.list.length > 1 ? "s" : ""}
+            {" "}compatible{catalog.list.length > 1 ? "s" : ""}
           </span>
         )}
         {catalog.status === "error" && (
