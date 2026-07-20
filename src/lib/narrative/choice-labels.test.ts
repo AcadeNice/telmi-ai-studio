@@ -3,6 +3,7 @@ import type { NarrativeStory } from "./schema";
 import {
   choiceDisplayLabel,
   choiceImagePrompt,
+  isMultipleChoiceImage,
   noTextImagePrompt,
   removeChildName,
 } from "./choice-labels";
@@ -55,6 +56,18 @@ describe("choice labels used by media and graph views", () => {
     expect(prompt).toContain("Aucun texte");
     expect(prompt).not.toContain("«");
     expect(prompt).not.toContain("Continuer");
+  });
+
+  it("reserves the navigation indicator only for sibling choices", () => {
+    const story = structuredClone(narrative);
+    story.choices[1]!.sourceSceneId = story.choices[0]!.sourceSceneId;
+    expect(isMultipleChoiceImage(story, story.choices[0]!)).toBe(true);
+    expect(choiceImagePrompt(story, story.choices[0]!)).toContain(
+      "coin inférieur gauche",
+    );
+    expect(isMultipleChoiceImage(narrative, narrative.choices[0]!)).toBe(
+      false,
+    );
   });
 
   it("removes the child's first name without removing similar words", () => {

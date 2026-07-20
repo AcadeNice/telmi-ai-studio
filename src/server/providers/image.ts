@@ -47,15 +47,23 @@ async function generateWithOpenRouter(
   return payload;
 }
 
-export async function generateImage(prompt: string, outputPath: string) {
+export async function generateImage(
+  prompt: string,
+  outputPath: string,
+  referenceImagePath?: string,
+  choiceNavigation = false,
+) {
   const config = getProviderConfig("image");
   if (config.provider.toLowerCase() === "codex") {
     const temporary = `${outputPath}.codex-source`;
     try {
-      await generateImageWithCodex(prompt, temporary);
+      await generateImageWithCodex(prompt, temporary, referenceImagePath);
       await fs.mkdir(path.dirname(outputPath), { recursive: true });
       await sharp(temporary)
         .resize(640, 480, { fit: "cover" })
+        .composite(
+          choiceNavigation ? [{ input: choiceNavigationOverlay() }] : [],
+        )
         .png({ compressionLevel: 9 })
         .toFile(outputPath);
       return { outputPath, bytes: (await fs.stat(outputPath)).size };
@@ -88,7 +96,20 @@ export async function generateImage(prompt: string, outputPath: string) {
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await sharp(Buffer.from(encoded, "base64"))
     .resize(640, 480, { fit: "cover" })
+    .composite(choiceNavigation ? [{ input: choiceNavigationOverlay() }] : [])
     .png({ compressionLevel: 9 })
     .toFile(outputPath);
   return { outputPath, bytes: (await fs.stat(outputPath)).size };
+}
+
+function choiceNavigationOverlay() {
+  return Buffer.from(`<svg width="640" height="480" viewBox="0 0 640 480" xmlns="http://www.w3.org/2000/svg">
+    <path d="M0 480V376A104 104 0 0 1 104 480H0Z" fill="white" fill-opacity="0.94"/>
+    <g fill="none" stroke="#31284F" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M45 425L25 445L45 465"/>
+      <path d="M25 445H53"/>
+      <path d="M65 425L85 445L65 465"/>
+      <path d="M57 445H85"/>
+    </g>
+  </svg>`);
 }

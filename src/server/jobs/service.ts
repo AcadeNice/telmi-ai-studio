@@ -11,6 +11,7 @@ import {
   choiceDisplayLabel,
   choiceImagePrompt,
   coverImagePrompt,
+  isMultipleChoiceImage,
   noTextImagePrompt,
 } from "@/lib/narrative/choice-labels";
 import { buildStoryVisualContext } from "@/lib/narrative/image-style";
@@ -521,19 +522,20 @@ async function runImages(jobId: string) {
   const visualContext = buildStoryVisualContext(narrative, parameters);
   const base = path.join(versionDirectory(story.id, version.version), "assets");
   const imageDir = path.join(base, "images");
+  const coverPath = path.join(base, "cover.png");
   const coverPrompt = coverImagePrompt(
     narrative,
     visualContext,
     parameters.childName,
   );
-  await generateImage(coverPrompt, path.join(base, "cover.png"));
-  await fs.copyFile(path.join(base, "cover.png"), path.join(base, "title.png"));
+  await generateImage(coverPrompt, coverPath);
+  await fs.copyFile(coverPath, path.join(base, "title.png"));
   await recordAsset(
     version.id,
     null,
     "cover",
     imageProvider,
-    path.join(base, "cover.png"),
+    coverPath,
     "image/png",
     {
       prompt: coverPrompt,
@@ -564,7 +566,7 @@ async function runImages(jobId: string) {
       visualContext,
       parameters.childName,
     );
-    await generateImage(prompt, file);
+    await generateImage(prompt, file, coverPath);
     await recordAsset(
       version.id,
       scene.id,
@@ -588,7 +590,12 @@ async function runImages(jobId: string) {
       visualContext,
       parameters.childName,
     );
-    await generateImage(prompt, file);
+    await generateImage(
+      prompt,
+      file,
+      coverPath,
+      isMultipleChoiceImage(narrative, choice),
+    );
     await recordAsset(
       version.id,
       `choice:${choice.id}`,

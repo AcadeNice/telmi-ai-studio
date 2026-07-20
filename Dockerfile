@@ -34,6 +34,7 @@ RUN python3 -m venv /opt/piper \
 ENV PIPER_PYTHON=/opt/piper/bin/python PIPER_VOICE_DIR=/opt/piper/voices CODEX_HOME=/data/codex-home
 RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs nextjs
 COPY --chown=nextjs:nodejs .agents/skills/imagegen /opt/telmi-skills/imagegen
+COPY --chown=nextjs:nodejs .agents/skills/telmi-story-illustrator /opt/telmi-skills/telmi-story-illustrator
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
@@ -42,4 +43,4 @@ RUN mkdir -p /data && chown nextjs:nodejs /data
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000 HOSTNAME=0.0.0.0 DATABASE_URL=/data/telmi.db DATA_DIR=/data
-CMD ["sh", "-lc", "mkdir -p \"$CODEX_HOME/skills\" && cp -R /opt/telmi-skills/imagegen \"$CODEX_HOME/skills/\" && exec node server.js"]
+CMD ["sh", "-lc", "mkdir -p \"$CODEX_HOME/skills\" && cp -R /opt/telmi-skills/imagegen /opt/telmi-skills/telmi-story-illustrator \"$CODEX_HOME/skills/\" && exec node server.js"]

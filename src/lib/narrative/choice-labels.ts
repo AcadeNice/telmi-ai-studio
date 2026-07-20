@@ -91,8 +91,14 @@ export function choiceImagePrompt(
   );
   const sourceDescription = source?.imagePrompt ?? source?.text;
   const targetDescription = target?.imagePrompt ?? target?.text;
+  const siblingChoiceCount = narrative.choices.filter(
+    (item) => item.sourceSceneId === choice.sourceSceneId,
+  ).length;
   const visualDescription = [
     "Illustration jeunesse douce, colorée et distincte au format horizontal 4:3",
+    siblingChoiceCount > 1
+      ? "Cette image représente l’un de plusieurs choix : laisser le coin inférieur gauche calme, vide de personnage et d’élément important pour recevoir l’indicateur de navigation"
+      : null,
     sourceDescription
       ? `Faire partir la scène de cette situation visuelle : ${sourceDescription}`
       : null,
@@ -103,4 +109,15 @@ export function choiceImagePrompt(
     .filter(Boolean)
     .join(". ");
   return noTextImagePrompt(visualDescription, artDirection, childName);
+}
+
+export function isMultipleChoiceImage(
+  narrative: NarrativeStory,
+  choice: NarrativeChoice,
+) {
+  return (
+    narrative.choices.filter(
+      (item) => item.sourceSceneId === choice.sourceSceneId,
+    ).length > 1
+  );
 }

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Illustrateur Telmi"
+  short_description: "Illustrations cohérentes pour histoires Telmi"
+  default_prompt: "Utilise $telmi-story-illustrator pour créer une illustration Telmi cohérente et sans texte."

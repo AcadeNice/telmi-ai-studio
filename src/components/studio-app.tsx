@@ -3494,10 +3494,10 @@ function ProviderSettingsCard({
         <>
           <CodexConnection api={api} />
           <p className="provider-note">
-            Les illustrations utilisent le skill officiel $imagegen et les
-            limites incluses dans ton abonnement Codex. GPT Image 2 est le seul
-            moteur d’image actuellement exposé par ce skill ; le modèle Codex
-            qui orchestre sa génération n’est pas un second moteur d’image.
+            Les illustrations utilisent le skill Telmi Story Illustrator,
+            construit sur le skill officiel $imagegen, avec contrôle du format,
+            de la cohérence graphique et de l’absence de texte. Les limites de
+            ton abonnement Codex s’appliquent.
           </p>
         </>
       )}

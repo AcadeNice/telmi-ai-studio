@@ -247,6 +247,7 @@ export async function generateNarrativeWithCodex(
 export async function generateImageWithCodex(
   prompt: string,
   outputPath: string,
+  referenceImagePath?: string,
 ) {
   const status = await getCodexLoginStatus();
   if (!status.connected)
@@ -257,10 +258,17 @@ export async function generateImageWithCodex(
     );
   const workDirectory = path.join("/tmp", `telmi-codex-image-${randomUUID()}`);
   const requestedOutput = path.join(workDirectory, "telmi-image.png");
+  const referenceCopy = path.join(workDirectory, "story-reference.png");
   const generatedImagesDirectory = path.join(CODEX_HOME, "generated_images");
   const generationStartedAt = Date.now();
   await fs.mkdir(workDirectory, { recursive: true });
-  const instruction = `$imagegen Génère une illustration pour une histoire enfantine avec ce prompt : ${prompt}\n\nContraintes impératives : aucune lettre, aucun mot, aucun chiffre, aucun logo, aucune signature et aucun filigrane dans l’image. Enregistre le résultat final dans ${requestedOutput}.`;
+  if (referenceImagePath)
+    await fs.copyFile(referenceImagePath, referenceCopy).catch(() => undefined);
+  const hasReference = await fs
+    .access(referenceCopy)
+    .then(() => true)
+    .catch(() => false);
+  const instruction = `$telmi-story-illustrator Crée une illustration Telmi pour une histoire enfantine.\n\nRôle de l’image et contexte visuel : ${prompt}\n\n${hasReference ? `Image de référence canonique pour l’identité et le style : ${referenceCopy}.` : "Aucune image de référence canonique n’est encore disponible : établir l’identité visuelle de cette histoire."}\n\nEnregistre le résultat final dans ${requestedOutput}.`;
   try {
     await new Promise<void>((resolve, reject) => {
       const child = spawn(

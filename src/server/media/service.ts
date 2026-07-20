@@ -10,6 +10,7 @@ import {
   choiceDisplayLabel,
   choiceImagePrompt,
   coverImagePrompt,
+  isMultipleChoiceImage,
   noTextImagePrompt,
 } from "@/lib/narrative/choice-labels";
 import { buildStoryVisualContext } from "@/lib/narrative/image-style";
@@ -338,7 +339,35 @@ export async function regenerateMedia(
       const prompt = input.prompt?.trim() || metadata.prompt?.trim();
       if (!prompt)
         throw new ApiError(400, "PROMPT_REQUIRED", "Le prompt est requis.");
-      await generateImage(prompt, temporary);
+      const cover =
+        asset.type === "image"
+          ? db
+              .select()
+              .from(generatedAssets)
+              .where(
+                and(
+                  eq(generatedAssets.versionId, versionId),
+                  eq(generatedAssets.type, "cover"),
+                  sql`${generatedAssets.sceneKey} is null`,
+                ),
+              )
+              .get()
+          : undefined;
+      const narrative = loadNarrative(versionId);
+      const choiceId = asset.sceneKey?.startsWith("choice:")
+        ? asset.sceneKey.slice("choice:".length)
+        : null;
+      const choice = choiceId
+        ? narrative?.choices.find((item) => item.id === choiceId)
+        : undefined;
+      await generateImage(
+        prompt,
+        temporary,
+        cover?.path,
+        Boolean(
+          narrative && choice && isMultipleChoiceImage(narrative, choice),
+        ),
+      );
       await fs.rename(temporary, asset.path);
       const provider = getProviderConfig("image").provider;
       const nextMetadata = {
