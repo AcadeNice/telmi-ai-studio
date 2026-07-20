@@ -2916,6 +2916,7 @@ const providerChoices: Record<
     { id: "custom", label: "Personnalisé" },
   ],
   image: [
+    { id: "codex", label: "Codex Imagegen (abonnement ChatGPT)" },
     { id: "openrouter", label: "OpenRouter" },
     { id: "openai", label: "OpenAI" },
     { id: "custom", label: "Personnalisé" },
@@ -3351,7 +3352,10 @@ function ProviderSettingsCard({
               onChange({
                 provider: nextPreset,
                 baseUrl: defaults.baseUrl,
-                model: defaults.model ?? "",
+                model:
+                  nextPreset === "codex" && provider.type === "image"
+                    ? "gpt-image-2"
+                    : (defaults.model ?? ""),
               });
             }}
           >
@@ -3478,6 +3482,15 @@ function ProviderSettingsCard({
       )}
       {provider.type === "text" && preset === "codex" && (
         <CodexConnection api={api} />
+      )}
+      {provider.type === "image" && preset === "codex" && (
+        <>
+          <CodexConnection api={api} />
+          <p className="provider-note">
+            Les illustrations utilisent le skill officiel $imagegen et les
+            limites incluses dans ton abonnement Codex.
+          </p>
+        </>
       )}
     </div>
   );

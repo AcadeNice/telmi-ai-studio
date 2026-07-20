@@ -349,7 +349,13 @@ export async function regenerateMedia(
       await updateAsset(asset, provider, nextMetadata);
       if (asset.type === "cover")
         await syncTitleImage(context, { ...asset, provider }, nextMetadata);
-      recordUsage(versionId, provider, "image-regeneration", 1, 4);
+      recordUsage(
+        versionId,
+        provider,
+        "image-regeneration",
+        1,
+        provider.toLowerCase() === "codex" ? 0 : 4,
+      );
     } else {
       const text = metadata.text?.trim();
       const voiceId = input.voiceId?.trim() || metadata.voiceId?.trim();

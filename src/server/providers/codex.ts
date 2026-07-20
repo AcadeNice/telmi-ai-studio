@@ -202,3 +202,103 @@ export async function generateNarrativeWithCodex(
     ]);
   }
 }
+
+export async function generateImageWithCodex(
+  prompt: string,
+  outputPath: string,
+) {
+  const status = await getCodexLoginStatus();
+  if (!status.connected)
+    throw new ApiError(
+      409,
+      "CODEX_NOT_CONNECTED",
+      "Connecte d’abord le compte ChatGPT dans les paramètres Codex CLI.",
+    );
+  const workDirectory = path.join("/tmp", `telmi-codex-image-${randomUUID()}`);
+  const requestedOutput = path.join(workDirectory, "telmi-image.png");
+  const generatedImagesDirectory = path.join(CODEX_HOME, "generated_images");
+  const generationStartedAt = Date.now();
+  await fs.mkdir(workDirectory, { recursive: true });
+  const instruction = `$imagegen Génère une illustration pour une histoire enfantine avec ce prompt : ${prompt}\n\nContraintes impératives : aucune lettre, aucun mot, aucun chiffre, aucun logo, aucune signature et aucun filigrane dans l’image. Enregistre le résultat final dans ${requestedOutput}.`;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(
+        CODEX_COMMAND,
+        [
+          "exec",
+          "--ephemeral",
+          "--skip-git-repo-check",
+          "--sandbox",
+          "workspace-write",
+          "--ignore-user-config",
+          "--ignore-rules",
+          "--model",
+          "gpt-5.6-sol",
+          instruction,
+        ],
+        {
+          cwd: workDirectory,
+          env: codexEnvironment(),
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      let errorOutput = "";
+      const timer = setTimeout(() => {
+        child.kill("SIGTERM");
+        reject(new Error("Codex Imagegen a dépassé le délai de génération."));
+      }, 360_000);
+      child.stderr.on("data", (chunk: Buffer) => {
+        errorOutput = `${errorOutput}${chunk.toString("utf8")}`.slice(
+          -MAX_OUTPUT_BYTES,
+        );
+      });
+      child.on("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.on("exit", (code) => {
+        clearTimeout(timer);
+        if (code === 0) resolve();
+        else
+          reject(
+            new Error(
+              cleanOutput(errorOutput).trim() ||
+                `Codex Imagegen : code ${code}`,
+            ),
+          );
+      });
+    });
+    let sourcePath = requestedOutput;
+    try {
+      await fs.access(sourcePath);
+    } catch {
+      const candidates: Array<{ path: string; modifiedAt: number }> = [];
+      const sessionDirectories = await fs
+        .readdir(generatedImagesDirectory, { withFileTypes: true })
+        .catch(() => []);
+      for (const directory of sessionDirectories) {
+        if (!directory.isDirectory()) continue;
+        const directoryPath = path.join(generatedImagesDirectory, directory.name);
+        const files = await fs.readdir(directoryPath, { withFileTypes: true });
+        for (const file of files) {
+          if (!file.isFile() || !/\.(png|jpe?g|webp)$/i.test(file.name)) continue;
+          const candidatePath = path.join(directoryPath, file.name);
+          const stat = await fs.stat(candidatePath);
+          if (stat.mtimeMs >= generationStartedAt - 5_000)
+            candidates.push({ path: candidatePath, modifiedAt: stat.mtimeMs });
+        }
+      }
+      const generated = candidates.sort(
+        (left, right) => right.modifiedAt - left.modifiedAt,
+      )[0];
+      if (!generated)
+        throw new Error("Codex Imagegen n’a produit aucun fichier image.");
+      sourcePath = generated.path;
+    }
+    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.copyFile(sourcePath, outputPath);
+    return { outputPath, bytes: (await fs.stat(outputPath)).size };
+  } finally {
+    await fs.rm(workDirectory, { recursive: true, force: true });
+  }
+}

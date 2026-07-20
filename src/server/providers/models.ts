@@ -52,7 +52,8 @@ export function inferProviderPreset(
   }
   if (type === "tts" && normalized === "elevenlabs") return "elevenlabs";
   if (type === "tts" && normalized === "piper") return "piper";
-  if (type === "text" && normalized === "codex") return "codex";
+  if (["text", "image"].includes(type) && normalized === "codex")
+    return "codex";
   if (["openrouter", "openai", "mistral", "groq"].includes(normalized))
     return normalized as ProviderPreset;
   return "custom";
@@ -65,13 +66,21 @@ export async function listProviderModels(input: {
   baseUrl?: string | null;
 }) {
   if (input.preset === "codex")
-    return [
-      {
-        id: "gpt-5.6-sol",
-        name: "GPT-5.6 Sol — abonnement Codex",
-        description: "Modèle Codex recommandé pour générer le scénario.",
-      },
-    ];
+    return input.type === "image"
+      ? [
+          {
+            id: "gpt-image-2",
+            name: "GPT Image 2 — abonnement Codex",
+            description: "Génération via le skill officiel $imagegen.",
+          },
+        ]
+      : [
+          {
+            id: "gpt-5.6-sol",
+            name: "GPT-5.6 Sol — abonnement Codex",
+            description: "Modèle Codex recommandé pour générer le scénario.",
+          },
+        ];
   if (input.preset === "piper")
     return [
       {

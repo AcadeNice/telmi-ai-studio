@@ -85,7 +85,8 @@ export async function PUT(request: Request) {
         const normalizedProvider = provider.provider.toLowerCase();
         const localProvider =
           (provider.type === "tts" && normalizedProvider === "piper") ||
-          (provider.type === "text" && normalizedProvider === "codex");
+          (["text", "image"].includes(provider.type) &&
+            normalizedProvider === "codex");
         const encryptedApiKey = provider.apiKey
           ? encryptSecret(provider.apiKey)
           : (current?.encryptedApiKey ??

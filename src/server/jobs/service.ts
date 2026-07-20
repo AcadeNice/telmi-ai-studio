@@ -516,6 +516,7 @@ async function runImages(jobId: string) {
   const { story, version } = jobContext(jobId);
   const narrative = loadNarrative(version.id)!;
   const parameters = JSON.parse(version.parametersJson) as CreationParameters;
+  const imageProvider = getProviderConfig("image").provider;
   const illustrationMode = parameters.illustrationMode ?? "choices";
   const visualContext = buildStoryVisualContext(narrative, parameters);
   const base = path.join(versionDirectory(story.id, version.version), "assets");
@@ -531,7 +532,7 @@ async function runImages(jobId: string) {
     version.id,
     null,
     "cover",
-    "openai",
+    imageProvider,
     path.join(base, "cover.png"),
     "image/png",
     {
@@ -544,7 +545,7 @@ async function runImages(jobId: string) {
     version.id,
     null,
     "title_image",
-    "openai",
+    imageProvider,
     path.join(base, "title.png"),
     "image/png",
     {
@@ -568,7 +569,7 @@ async function runImages(jobId: string) {
       version.id,
       scene.id,
       "image",
-      "openai",
+      imageProvider,
       file,
       "image/png",
       {
@@ -592,7 +593,7 @@ async function runImages(jobId: string) {
       version.id,
       `choice:${choice.id}`,
       "image",
-      "openai",
+      imageProvider,
       file,
       "image/png",
       {
@@ -608,7 +609,13 @@ async function runImages(jobId: string) {
       : 0) +
     (illustrationMode === "cover" ? 0 : narrative.choices.length) +
     2;
-  recordUsage(version.id, "openai", "images", generated, generated * 4);
+  recordUsage(
+    version.id,
+    imageProvider,
+    "images",
+    generated,
+    imageProvider.toLowerCase() === "codex" ? 0 : generated * 4,
+  );
   return { generated };
 }
 
