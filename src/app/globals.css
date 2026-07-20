@@ -830,6 +830,92 @@ button {
   background: linear-gradient(90deg, var(--purple), #ad8cff);
   transition: 0.3s;
 }
+.scenario-terminal {
+  padding: 0;
+  overflow: hidden;
+  border-color: #332a4c;
+  background: #171321;
+  color: #f7f4ff;
+}
+.scenario-terminal-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px 13px;
+  background: #211a31;
+  border-bottom: 1px solid #3c3156;
+}
+.scenario-terminal-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.scenario-terminal-heading svg {
+  width: 22px;
+  color: #bda5ff;
+}
+.scenario-terminal-heading strong,
+.scenario-terminal-heading small {
+  display: block;
+}
+.scenario-terminal-heading small {
+  margin-top: 2px;
+  color: #afa6c4;
+}
+.scenario-terminal-heading > span {
+  min-width: 58px;
+  text-align: right;
+  color: #cfbdff;
+  font-weight: 800;
+  font-size: 18px;
+}
+.scenario-progress {
+  margin: 0;
+  height: 5px;
+  border-radius: 0;
+  background: #292139;
+}
+.scenario-terminal-output {
+  min-height: 150px;
+  max-height: 280px;
+  overflow: auto;
+  padding: 15px 18px 18px;
+  font:
+    13px/1.55 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+}
+.scenario-terminal-output > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 12px;
+  padding: 3px 0;
+}
+.scenario-terminal-output time {
+  color: #7f7398;
+}
+.scenario-terminal-output span {
+  color: #e7e0f5;
+}
+.scenario-terminal-cursor span::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 7px;
+  vertical-align: -2px;
+  background: #a987ff;
+  animation: terminal-blink 1s steps(1) infinite;
+}
+@keyframes terminal-blink {
+  50% {
+    opacity: 0;
+  }
+}
 .media-review {
   display: grid;
   gap: 22px;

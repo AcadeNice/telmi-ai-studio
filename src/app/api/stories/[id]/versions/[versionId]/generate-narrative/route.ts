@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { apiErrorResponse, ApiError, readJson } from "@/server/api/response";
-import { requireMutationSession } from "@/server/auth/session";
+import { requireMutationSession, requireSession } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { stories, storyVersions, usageRecords } from "@/server/db/schema";
 import { randomUUID } from "node:crypto";
@@ -11,6 +11,13 @@ import { generateNarrative } from "@/server/providers/text";
 import { getProviderConfig } from "@/server/providers/config";
 import { loadNarrative, saveNarrative } from "@/server/stories/service";
 import { writeAppLog } from "@/server/logging/app-log";
+import {
+  failNarrativeProgress,
+  finishNarrativeProgress,
+  getNarrativeProgress,
+  startNarrativeProgress,
+  updateNarrativeProgress,
+} from "@/server/providers/narrative-progress";
 
 const requestSchema = z.object({
   mode: z.enum(["create", "refine"]).default("create"),
@@ -23,9 +30,12 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ id: string; versionId: string }> },
 ) {
+  let progressVersionId: string | undefined;
   try {
     await requireMutationSession(request);
     const { id, versionId } = await context.params;
+    progressVersionId = versionId;
+    startNarrativeProgress(versionId);
     const row = db
       .select()
       .from(storyVersions)
@@ -51,22 +61,28 @@ export async function POST(
         "NARRATIVE_NOT_FOUND",
         "Aucun scénario à améliorer n’a été trouvé.",
       );
-    const result = await generateNarrative(parameters, {
-      currentNarrative: currentNarrative ?? undefined,
-      instruction: input.instruction,
-      preserveSceneIds: [
-        ...new Set([
-          ...(parameters.preservedSceneIds ?? []),
-          ...input.preserveSceneIds,
-        ]),
-      ],
-      preserveChoiceIds: [
-        ...new Set([
-          ...(parameters.preservedChoiceIds ?? []),
-          ...input.preserveChoiceIds,
-        ]),
-      ],
-    });
+    updateNarrativeProgress(versionId, 8, "Paramètres du parent validés.");
+    const result = await generateNarrative(
+      parameters,
+      {
+        currentNarrative: currentNarrative ?? undefined,
+        instruction: input.instruction,
+        preserveSceneIds: [
+          ...new Set([
+            ...(parameters.preservedSceneIds ?? []),
+            ...input.preserveSceneIds,
+          ]),
+        ],
+        preserveChoiceIds: [
+          ...new Set([
+            ...(parameters.preservedChoiceIds ?? []),
+            ...input.preserveChoiceIds,
+          ]),
+        ],
+      },
+      (percent, message) =>
+        updateNarrativeProgress(versionId, percent, message),
+    );
     const validation = validateNarrativeGraph(result.narrative);
     if (!validation.valid) {
       await writeAppLog("warning", "Graphe IA invalide après réparation", {
@@ -83,6 +99,11 @@ export async function POST(
       );
     }
     saveNarrative(versionId, result.narrative, result.raw);
+    updateNarrativeProgress(
+      versionId,
+      98,
+      "Scénario enregistré dans le brouillon.",
+    );
     const textProvider = getProviderConfig("text").provider;
     const totalTokens = result.usage?.total_tokens ?? 0;
     const estimatedCostCents =
@@ -120,11 +141,26 @@ export async function POST(
       })
       .where(eq(stories.id, id))
       .run();
+    finishNarrativeProgress(versionId, "Scénario terminé et prêt à être relu.");
     return Response.json({
       narrative: result.narrative,
       validation,
       usage: result.usage,
     });
+  } catch (error) {
+    if (progressVersionId) failNarrativeProgress(progressVersionId);
+    return apiErrorResponse(error);
+  }
+}
+
+export async function GET(
+  _request: Request,
+  context: { params: Promise<{ id: string; versionId: string }> },
+) {
+  try {
+    await requireSession();
+    const { versionId } = await context.params;
+    return Response.json(getNarrativeProgress(versionId));
   } catch (error) {
     return apiErrorResponse(error);
   }

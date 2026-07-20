@@ -169,7 +169,9 @@ export async function generateNarrativeWithCodex(
   systemPrompt: string,
   userPrompt: string,
   model = "gpt-5.6-sol",
+  onProgress?: (percent: number, message: string) => void,
 ) {
+  onProgress?.(12, "Vérification de la connexion ChatGPT/Codex.");
   const status = await getCodexLoginStatus();
   if (!status.connected)
     throw new ApiError(
@@ -187,6 +189,7 @@ export async function generateNarrativeWithCodex(
   );
   const prompt = `${systemPrompt}\n\nDemande du parent :\n${userPrompt}\n\nRetourne uniquement le scénario JSON demandé. N’utilise aucun outil, aucune commande et aucune recherche.`;
   try {
+    onProgress?.(22, `Session Codex démarrée avec ${model}.`);
     await new Promise<void>((resolve, reject) => {
       const child = spawn(
         CODEX_COMMAND,
@@ -213,11 +216,16 @@ export async function generateNarrativeWithCodex(
         },
       );
       let errorOutput = "";
+      let generationReported = false;
       const timer = setTimeout(() => {
         child.kill("SIGTERM");
         reject(new Error("Codex CLI a dépassé le délai de génération."));
       }, 300_000);
       child.stderr.on("data", (chunk: Buffer) => {
+        if (!generationReported) {
+          generationReported = true;
+          onProgress?.(38, "Codex construit le scénario et ses branches.");
+        }
         errorOutput = `${errorOutput}${chunk.toString("utf8")}`.slice(
           -MAX_OUTPUT_BYTES,
         );
@@ -238,6 +246,7 @@ export async function generateNarrativeWithCodex(
       });
       child.stdin.end(prompt);
     });
+    onProgress?.(62, "Réponse JSON structurée reçue de Codex.");
     return normalizeCodexNarrativeOutput(
       JSON.parse(await fs.readFile(outputPath, "utf8")) as unknown,
     );

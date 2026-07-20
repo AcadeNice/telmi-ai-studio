@@ -47,6 +47,7 @@ async function requestStructuredNarrative(
   systemPrompt: string,
   userPrompt: string,
   temperature: number,
+  onProgress?: (percent: number, message: string) => void,
 ) {
   if (config.provider.toLowerCase() === "codex")
     return {
@@ -54,6 +55,7 @@ async function requestStructuredNarrative(
         systemPrompt,
         userPrompt,
         config.model ?? "gpt-5.6-sol",
+        onProgress,
       ),
       usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
     };
@@ -139,6 +141,7 @@ export function preserveNarrativeEdits(
 export async function generateNarrative(
   parameters: CreationParameters,
   options: NarrativeGenerationOptions = {},
+  onProgress?: (percent: number, message: string) => void,
 ) {
   const config = getProviderConfig("text");
   const isRefinement = Boolean(options.currentNarrative);
@@ -165,8 +168,10 @@ export async function generateNarrative(
     systemPrompt,
     userPrompt,
     0.7,
+    onProgress,
   );
   const initialRaw = initial.raw;
+  onProgress?.(70, "Analyse et normalisation du scénario.");
   let narrative = preserveNarrativeEdits(
     normalizeNarrativeSceneTypes(narrativeStorySchema.parse(initialRaw)),
     options.currentNarrative,
@@ -174,8 +179,10 @@ export async function generateNarrative(
     [...lockedChoices],
   );
   let validation = validateNarrativeGraph(narrative);
+  onProgress?.(78, "Validation du graphe narratif.");
 
   if (!validation.valid) {
+    onProgress?.(82, "Corrections structurelles demandées à Codex.");
     const repair = await requestStructuredNarrative(
       config,
       `Tu corriges un graphe narratif JSON sans changer le thème, les personnages ni l'intention de l'histoire. Les scènes et choix verrouillés doivent rester strictement identiques. Retourne uniquement un objet conforme au JSON Schema. ${creativeRules} ${graphRules}`,
@@ -193,6 +200,8 @@ export async function generateNarrative(
           .map(({ code, message, sceneId }) => ({ code, message, sceneId })),
       }),
       0.2,
+      (percent, message) =>
+        onProgress?.(82 + Math.round(percent * 0.12), message),
     );
     const repairedRaw = repair.raw;
     narrative = preserveNarrativeEdits(
@@ -202,6 +211,7 @@ export async function generateNarrative(
       [...lockedChoices],
     );
     validation = validateNarrativeGraph(narrative);
+    onProgress?.(96, "Graphe corrigé et validé une seconde fois.");
 
     return {
       narrative,

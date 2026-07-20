@@ -21,6 +21,7 @@ import {
   RotateCcw,
   Settings,
   Sparkles,
+  Terminal,
   Trash2,
   Upload,
   Volume2,
@@ -114,6 +115,14 @@ type MediaReview = {
   generatedCount: number;
   reviewedAt?: string | null;
   readOnly: boolean;
+};
+
+type NarrativeProgress = {
+  status: "idle" | "running" | "completed" | "failed";
+  percent: number;
+  lines: Array<{ at: string; message: string }>;
+  startedAt?: string;
+  updatedAt?: string;
 };
 
 class ApiClientError extends Error {
@@ -1625,6 +1634,8 @@ function StoryStudio({
   const [tab, setTab] = useState<"list" | "graph" | "json">("list");
   const [json, setJson] = useState("");
   const [busy, setBusy] = useState("");
+  const [scenarioProgress, setScenarioProgress] =
+    useState<NarrativeProgress | null>(null);
   const [refinementInstruction, setRefinementInstruction] = useState("");
   const [preservedSceneIds, setPreservedSceneIds] = useState<string[]>([]);
   const [preservedChoiceIds, setPreservedChoiceIds] = useState<string[]>([]);
@@ -1854,38 +1865,65 @@ function StoryStudio({
       setBusy("");
     }
   };
-  const refineScenario = async () => {
-    setBusy("refine");
+  const runScenarioGeneration = async (
+    mode: "create" | "refine",
+    body: Record<string, unknown>,
+  ) => {
+    const busyName = mode === "refine" ? "refine" : "scenario";
+    setBusy(busyName);
+    setScenarioProgress({
+      status: "running",
+      percent: 1,
+      startedAt: new Date().toISOString(),
+      lines: [
+        { at: new Date().toISOString(), message: "Ouverture du suivi Codex…" },
+      ],
+    });
+    const progressUrl = `/api/stories/${story.id}/versions/${version.id}/generate-narrative`;
+    const refreshProgress = () =>
+      api<NarrativeProgress>(progressUrl)
+        .then(setScenarioProgress)
+        .catch(() => undefined);
+    const timer = window.setInterval(() => void refreshProgress(), 1_000);
     try {
       const result = await api<{
         narrative: NarrativeStory;
         validation: typeof validation;
-      }>(`/api/stories/${story.id}/versions/${version.id}/generate-narrative`, {
+      }>(progressUrl, {
         method: "POST",
-        body: JSON.stringify({
-          mode: "refine",
-          instruction: refinementInstruction || undefined,
-          preserveSceneIds: preservedSceneIds,
-          preserveChoiceIds: preservedChoiceIds,
-        }),
+        body: JSON.stringify({ mode, ...body }),
       });
+      await refreshProgress();
       setNarrative(result.narrative);
       setJson(JSON.stringify(result.narrative, null, 2));
       setValidation(result.validation);
       setGraphLayoutSaved(false);
+      onRefresh();
+      return result;
+    } catch (error) {
+      await refreshProgress();
+      onNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    } finally {
+      window.clearInterval(timer);
+      setBusy("");
+    }
+  };
+  const refineScenario = async () => {
+    const result = await runScenarioGeneration("refine", {
+      instruction: refinementInstruction || undefined,
+      preserveSceneIds: preservedSceneIds,
+      preserveChoiceIds: preservedChoiceIds,
+    });
+    if (result) {
       setRefinementInstruction("");
       onNotice({
         tone: "ok",
         text: "Le scénario a été harmonisé. Vos scènes modifiées ont été conservées.",
       });
-      onRefresh();
-    } catch (error) {
-      onNotice({
-        tone: "error",
-        text: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      setBusy("");
     }
   };
   const focusValidationIssue = (sceneId: string) => {
@@ -1922,14 +1960,7 @@ function StoryStudio({
             <button
               className="primary"
               disabled={!!busy}
-              onClick={() =>
-                action("scenario", () =>
-                  api(
-                    `/api/stories/${story.id}/versions/${version.id}/generate-narrative`,
-                    { method: "POST", body: "{}" },
-                  ),
-                )
-              }
+              onClick={() => void runScenarioGeneration("create", {})}
             >
               <Sparkles />{" "}
               {busy === "scenario" ? "Génération…" : "Générer le scénario"}
@@ -2017,6 +2048,45 @@ function StoryStudio({
           )}
         </div>
       </div>
+      {scenarioProgress && scenarioProgress.status !== "idle" && (
+        <section className="scenario-terminal page-card" aria-live="polite">
+          <div className="scenario-terminal-heading">
+            <div>
+              <Terminal />
+              <div>
+                <strong>Suivi de la génération Codex</strong>
+                <small>
+                  Journal sécurisé · les prompts et données privées sont masqués
+                </small>
+              </div>
+            </div>
+            <span>{scenarioProgress.percent}%</span>
+          </div>
+          <div className="progress scenario-progress">
+            <i style={{ width: `${scenarioProgress.percent}%` }} />
+          </div>
+          <div className="scenario-terminal-output">
+            {scenarioProgress.lines.map((line, index) => (
+              <div key={`${line.at}-${index}`}>
+                <time>
+                  {new Date(line.at).toLocaleTimeString("fr-FR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  })}
+                </time>
+                <span>{line.message}</span>
+              </div>
+            ))}
+            {scenarioProgress.status === "running" && (
+              <div className="scenario-terminal-cursor">
+                <time>···</time>
+                <span>Codex travaille…</span>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
       {budgetConfirmation && (
         <div className="budget-confirmation page-card">
           <BadgeEuro />
@@ -3459,8 +3529,8 @@ function ProviderSettingsCard({
         </button>
         {catalog.status === "ready" && (
           <span>
-            {catalog.list.length} modèle{catalog.list.length > 1 ? "s" : ""}
-            {" "}compatible{catalog.list.length > 1 ? "s" : ""}
+            {catalog.list.length} modèle{catalog.list.length > 1 ? "s" : ""}{" "}
+            compatible{catalog.list.length > 1 ? "s" : ""}
           </span>
         )}
         {catalog.status === "error" && (
@@ -3484,9 +3554,9 @@ function ProviderSettingsCard({
         <>
           <CodexConnection api={api} />
           <p className="provider-note">
-            Sol privilégie la qualité, Terra l’équilibre, Luna la rapidité et
-            la légèreté. La liste vient directement des modèles disponibles
-            pour ton compte ChatGPT dans Codex.
+            Sol privilégie la qualité, Terra l’équilibre, Luna la rapidité et la
+            légèreté. La liste vient directement des modèles disponibles pour
+            ton compte ChatGPT dans Codex.
           </p>
         </>
       )}
