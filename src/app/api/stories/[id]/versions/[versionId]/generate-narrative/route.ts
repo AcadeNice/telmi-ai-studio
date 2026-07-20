@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { creationParametersSchema } from "@/lib/narrative/schema";
 import { validateNarrativeGraph } from "@/lib/narrative/validator";
 import { generateNarrative } from "@/server/providers/text";
+import { getProviderConfig } from "@/server/providers/config";
 import { loadNarrative, saveNarrative } from "@/server/stories/service";
 import { writeAppLog } from "@/server/logging/app-log";
 
@@ -82,13 +83,17 @@ export async function POST(
       );
     }
     saveNarrative(versionId, result.narrative, result.raw);
+    const textProvider = getProviderConfig("text").provider;
     const totalTokens = result.usage?.total_tokens ?? 0;
-    const estimatedCostCents = Math.max(1, Math.ceil(totalTokens / 1000));
+    const estimatedCostCents =
+      textProvider.toLowerCase() === "codex"
+        ? 0
+        : Math.max(1, Math.ceil(totalTokens / 1000));
     db.insert(usageRecords)
       .values({
         id: randomUUID(),
         versionId,
-        provider: "openai-compatible",
+        provider: textProvider,
         operation: "scenario",
         units: totalTokens,
         costCents: estimatedCostCents,

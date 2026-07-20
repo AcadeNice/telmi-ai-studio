@@ -11,6 +11,7 @@ describe("provider model catalogs", () => {
     expect(
       inferProviderPreset("openai", "https://openrouter.ai/api/v1", "image"),
     ).toBe("openrouter");
+    expect(inferProviderPreset("codex", null, "text")).toBe("codex");
     expect(
       inferProviderPreset(
         "compatible",

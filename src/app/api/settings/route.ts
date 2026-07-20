@@ -82,9 +82,10 @@ export async function PUT(request: Request) {
           .from(providerConfigurations)
           .where(eq(providerConfigurations.type, provider.type))
           .get();
+        const normalizedProvider = provider.provider.toLowerCase();
         const localProvider =
-          provider.type === "tts" &&
-          provider.provider.toLowerCase() === "piper";
+          (provider.type === "tts" && normalizedProvider === "piper") ||
+          (provider.type === "text" && normalizedProvider === "codex");
         const encryptedApiKey = provider.apiKey
           ? encryptSecret(provider.apiKey)
           : (current?.encryptedApiKey ??

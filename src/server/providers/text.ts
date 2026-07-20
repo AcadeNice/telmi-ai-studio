@@ -11,6 +11,7 @@ import {
 } from "@/lib/narrative/validator";
 import { ApiError } from "@/server/api/response";
 import { getProviderConfig } from "./config";
+import { generateNarrativeWithCodex } from "./codex";
 
 const graphRules = `
 Règles structurelles obligatoires :
@@ -40,6 +41,53 @@ export type NarrativeGenerationOptions = {
   preserveSceneIds?: string[];
   preserveChoiceIds?: string[];
 };
+
+async function requestStructuredNarrative(
+  config: ReturnType<typeof getProviderConfig>,
+  systemPrompt: string,
+  userPrompt: string,
+  temperature: number,
+) {
+  if (config.provider.toLowerCase() === "codex")
+    return {
+      raw: await generateNarrativeWithCodex(
+        systemPrompt,
+        userPrompt,
+        config.model ?? "gpt-5.6-sol",
+      ),
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    };
+  const client = new OpenAI({
+    apiKey: config.apiKey,
+    baseURL: config.baseUrl ?? undefined,
+  });
+  try {
+    const completion = await client.chat.completions.create({
+      model: config.model ?? "openai/gpt-4.1-mini",
+      temperature,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: narrativeJsonSchema,
+      },
+    });
+    const content = completion.choices[0]?.message.content;
+    if (!content)
+      throw new Error("Le fournisseur texte n’a retourné aucun scénario.");
+    return { raw: JSON.parse(content) as unknown, usage: completion.usage };
+  } catch (error) {
+    if (error instanceof OpenAI.APIError)
+      throw new ApiError(
+        502,
+        "PROVIDER_ERROR",
+        "Le fournisseur IA a refusé la génération. Vérifie le modèle configuré puis réessaie.",
+      );
+    throw error;
+  }
+}
 
 export function preserveNarrativeEdits(
   generated: NarrativeStory,
@@ -93,62 +141,32 @@ export async function generateNarrative(
   options: NarrativeGenerationOptions = {},
 ) {
   const config = getProviderConfig("text");
-  const client = new OpenAI({
-    apiKey: config.apiKey,
-    baseURL: config.baseUrl ?? undefined,
-  });
-  let completion;
   const isRefinement = Boolean(options.currentNarrative);
   const lockedScenes = new Set(options.preserveSceneIds ?? []);
   const lockedChoices = new Set(options.preserveChoiceIds ?? []);
   const creativeParameters = { ...parameters };
   delete creativeParameters.preservedSceneIds;
   delete creativeParameters.preservedChoiceIds;
-  try {
-    completion = await client.chat.completions.create({
-      model: config.model ?? "openai/gpt-4.1-mini",
-      temperature: 0.7,
-      messages: [
-        {
-          role: "system",
-          content: isRefinement
-            ? `Tu améliores et termines une histoire interactive française pour enfant à partir d'un scénario existant. Le scénario existant est la source de vérité : conserve ses personnages, événements, noms propres et intentions. Conserve les identifiants existants autant que possible. Les scènes et choix marqués comme verrouillés doivent être reproduits sans aucune modification. Complète et harmonise le reste du récit selon la demande du parent. Respecte strictement le JSON Schema. ${creativeRules} ${graphRules}`
-            : `Tu écris des histoires interactives en français pour enfants. Respecte strictement le JSON Schema. Les choix sont bienveillants et compréhensibles pour l’âge demandé. ${creativeRules} ${graphRules}`,
-        },
-        {
-          role: "user",
-          content: isRefinement
-            ? JSON.stringify({
-                task: "Améliorer et terminer ce scénario",
-                parameters: creativeParameters,
-                parentInstruction: options.instruction || undefined,
-                lockedSceneIds: [...lockedScenes],
-                lockedChoiceIds: [...lockedChoices],
-                currentStory: options.currentNarrative,
-              })
-            : `Crée l'histoire correspondant à ces paramètres :\n${JSON.stringify(creativeParameters)}`,
-        },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: narrativeJsonSchema,
-      },
-    });
-  } catch (error) {
-    if (error instanceof OpenAI.APIError)
-      throw new ApiError(
-        502,
-        "PROVIDER_ERROR",
-        isRefinement
-          ? "Le fournisseur IA a refusé l’amélioration du scénario. Vérifie le modèle configuré puis réessaie."
-          : "Le fournisseur IA a refusé la génération. Vérifie le modèle configuré puis réessaie.",
-      );
-    throw error;
-  }
-  const content = completion.choices[0]?.message.content;
-  if (!content)
-    throw new Error("Le fournisseur texte n’a retourné aucun scénario.");
-  const initialRaw = JSON.parse(content);
+  const systemPrompt = isRefinement
+    ? `Tu améliores et termines une histoire interactive française pour enfant à partir d'un scénario existant. Le scénario existant est la source de vérité : conserve ses personnages, événements, noms propres et intentions. Conserve les identifiants existants autant que possible. Les scènes et choix marqués comme verrouillés doivent être reproduits sans aucune modification. Complète et harmonise le reste du récit selon la demande du parent. Respecte strictement le JSON Schema. ${creativeRules} ${graphRules}`
+    : `Tu écris des histoires interactives en français pour enfants. Respecte strictement le JSON Schema. Les choix sont bienveillants et compréhensibles pour l’âge demandé. ${creativeRules} ${graphRules}`;
+  const userPrompt = isRefinement
+    ? JSON.stringify({
+        task: "Améliorer et terminer ce scénario",
+        parameters: creativeParameters,
+        parentInstruction: options.instruction || undefined,
+        lockedSceneIds: [...lockedScenes],
+        lockedChoiceIds: [...lockedChoices],
+        currentStory: options.currentNarrative,
+      })
+    : `Crée l'histoire correspondant à ces paramètres :\n${JSON.stringify(creativeParameters)}`;
+  const initial = await requestStructuredNarrative(
+    config,
+    systemPrompt,
+    userPrompt,
+    0.7,
+  );
+  const initialRaw = initial.raw;
   let narrative = preserveNarrativeEdits(
     normalizeNarrativeSceneTypes(narrativeStorySchema.parse(initialRaw)),
     options.currentNarrative,
@@ -158,58 +176,25 @@ export async function generateNarrative(
   let validation = validateNarrativeGraph(narrative);
 
   if (!validation.valid) {
-    let repairCompletion;
-    try {
-      repairCompletion = await client.chat.completions.create({
-        model: config.model ?? "openai/gpt-4.1-mini",
-        temperature: 0.2,
-        messages: [
-          {
-            role: "system",
-            content: `Tu corriges un graphe narratif JSON sans changer le thème, les personnages ni l'intention de l'histoire. Les scènes et choix verrouillés doivent rester strictement identiques. Retourne uniquement un objet conforme au JSON Schema. ${creativeRules} ${graphRules}`,
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              parameters: creativeParameters,
-              invalidStory: narrative,
-              lockedScenes: options.currentNarrative?.scenes.filter((scene) =>
-                lockedScenes.has(scene.id),
-              ),
-              lockedChoices: options.currentNarrative?.choices.filter(
-                (choice) => lockedChoices.has(choice.id),
-              ),
-              errors: validation.issues
-                .filter((issue) => issue.severity === "error")
-                .map(({ code, message, sceneId }) => ({
-                  code,
-                  message,
-                  sceneId,
-                })),
-            }),
-          },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: narrativeJsonSchema,
-        },
-      });
-    } catch (error) {
-      if (error instanceof OpenAI.APIError)
-        throw new ApiError(
-          502,
-          "PROVIDER_ERROR",
-          "Le fournisseur IA n’a pas pu réparer le scénario. Réessaie la génération.",
-        );
-      throw error;
-    }
-
-    const repairedContent = repairCompletion.choices[0]?.message.content;
-    if (!repairedContent)
-      throw new Error(
-        "Le fournisseur texte n’a retourné aucun scénario réparé.",
-      );
-    const repairedRaw = JSON.parse(repairedContent);
+    const repair = await requestStructuredNarrative(
+      config,
+      `Tu corriges un graphe narratif JSON sans changer le thème, les personnages ni l'intention de l'histoire. Les scènes et choix verrouillés doivent rester strictement identiques. Retourne uniquement un objet conforme au JSON Schema. ${creativeRules} ${graphRules}`,
+      JSON.stringify({
+        parameters: creativeParameters,
+        invalidStory: narrative,
+        lockedScenes: options.currentNarrative?.scenes.filter((scene) =>
+          lockedScenes.has(scene.id),
+        ),
+        lockedChoices: options.currentNarrative?.choices.filter((choice) =>
+          lockedChoices.has(choice.id),
+        ),
+        errors: validation.issues
+          .filter((issue) => issue.severity === "error")
+          .map(({ code, message, sceneId }) => ({ code, message, sceneId })),
+      }),
+      0.2,
+    );
+    const repairedRaw = repair.raw;
     narrative = preserveNarrativeEdits(
       normalizeNarrativeSceneTypes(narrativeStorySchema.parse(repairedRaw)),
       options.currentNarrative,
@@ -227,14 +212,14 @@ export async function generateNarrative(
       },
       usage: {
         prompt_tokens:
-          (completion.usage?.prompt_tokens ?? 0) +
-          (repairCompletion.usage?.prompt_tokens ?? 0),
+          (initial.usage?.prompt_tokens ?? 0) +
+          (repair.usage?.prompt_tokens ?? 0),
         completion_tokens:
-          (completion.usage?.completion_tokens ?? 0) +
-          (repairCompletion.usage?.completion_tokens ?? 0),
+          (initial.usage?.completion_tokens ?? 0) +
+          (repair.usage?.completion_tokens ?? 0),
         total_tokens:
-          (completion.usage?.total_tokens ?? 0) +
-          (repairCompletion.usage?.total_tokens ?? 0),
+          (initial.usage?.total_tokens ?? 0) +
+          (repair.usage?.total_tokens ?? 0),
       },
     };
   }
@@ -242,6 +227,6 @@ export async function generateNarrative(
   return {
     narrative,
     raw: isRefinement ? { mode: "refine", result: initialRaw } : initialRaw,
-    usage: completion.usage,
+    usage: initial.usage,
   };
 }

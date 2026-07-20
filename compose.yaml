@@ -8,6 +8,7 @@ services:
     environment:
       DATABASE_URL: "/data/telmi.db"
       DATA_DIR: "/data"
+      CODEX_HOME: "/data/codex-home"
       APP_ENCRYPTION_KEY: "${APP_ENCRYPTION_KEY}"
       NEXT_PUBLIC_APP_URL: "${NEXT_PUBLIC_APP_URL:-http://localhost:3000}"
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"

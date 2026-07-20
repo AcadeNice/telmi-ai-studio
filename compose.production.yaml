@@ -16,6 +16,7 @@ services:
       PORT: "3000"
       DATABASE_URL: /data/telmi.db
       DATA_DIR: /data
+      CODEX_HOME: /data/codex-home
       NEXT_PUBLIC_APP_URL: https://${TELMI_DOMAIN:-telmi.a3n.fr}
       COOKIE_SECURE: "true"
     volumes:

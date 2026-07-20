@@ -16,6 +16,7 @@ RUN pnpm build
 
 FROM base AS runner
 ENV NODE_ENV=production
+RUN npm install --global @openai/codex@0.144.6
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg python3 python3-venv && rm -rf /var/lib/apt/lists/*
 RUN python3 -m venv /opt/piper \
     && /opt/piper/bin/pip install --no-cache-dir piper-tts==1.4.2 \
@@ -30,7 +31,7 @@ RUN python3 -m venv /opt/piper \
       fr_FR-upmc-medium \
     && curl -fsSL https://raw.githubusercontent.com/DantSu/Telmi-Sync/master/extraResources/piper/voices/fr_FR-beatrice.onnx -o /opt/piper/voices/fr_FR-beatrice.onnx \
     && curl -fsSL https://raw.githubusercontent.com/DantSu/Telmi-Sync/master/extraResources/piper/voices/fr_FR-beatrice.onnx.json -o /opt/piper/voices/fr_FR-beatrice.onnx.json
-ENV PIPER_PYTHON=/opt/piper/bin/python PIPER_VOICE_DIR=/opt/piper/voices
+ENV PIPER_PYTHON=/opt/piper/bin/python PIPER_VOICE_DIR=/opt/piper/voices CODEX_HOME=/data/codex-home
 RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs nextjs
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./

@@ -8,6 +8,7 @@ export type ProviderPreset =
   | "groq"
   | "elevenlabs"
   | "piper"
+  | "codex"
   | "custom";
 
 export type ProviderModel = {
@@ -51,6 +52,7 @@ export function inferProviderPreset(
   }
   if (type === "tts" && normalized === "elevenlabs") return "elevenlabs";
   if (type === "tts" && normalized === "piper") return "piper";
+  if (type === "text" && normalized === "codex") return "codex";
   if (["openrouter", "openai", "mistral", "groq"].includes(normalized))
     return normalized as ProviderPreset;
   return "custom";
@@ -62,6 +64,14 @@ export async function listProviderModels(input: {
   apiKey?: string;
   baseUrl?: string | null;
 }) {
+  if (input.preset === "codex")
+    return [
+      {
+        id: "gpt-5.6-sol",
+        name: "GPT-5.6 Sol — abonnement Codex",
+        description: "Modèle Codex recommandé pour générer le scénario.",
+      },
+    ];
   if (input.preset === "piper")
     return [
       {

@@ -2886,6 +2886,7 @@ type ProviderPreset =
   | "groq"
   | "elevenlabs"
   | "piper"
+  | "codex"
   | "custom";
 type ProviderSettings = {
   type: ProviderType;
@@ -2907,6 +2908,7 @@ const providerChoices: Record<
   Array<{ id: ProviderPreset; label: string }>
 > = {
   text: [
+    { id: "codex", label: "Codex CLI (abonnement ChatGPT)" },
     { id: "openrouter", label: "OpenRouter" },
     { id: "openai", label: "OpenAI" },
     { id: "mistral", label: "Mistral AI" },
@@ -2948,6 +2950,10 @@ const providerDefaults: Record<
   piper: {
     baseUrl: "",
     model: "fr_FR-beatrice",
+  },
+  codex: {
+    baseUrl: "",
+    model: "gpt-5.6-sol",
   },
 };
 
@@ -3246,7 +3252,10 @@ function ProviderSettingsCard({
       if (
         !active ||
         (preset === "custom" && !provider.baseUrl) ||
-        (preset !== "openrouter" && preset !== "piper" && !provider.configured)
+        (preset !== "openrouter" &&
+          preset !== "piper" &&
+          preset !== "codex" &&
+          !provider.configured)
       )
         return;
       setCatalog((current) => ({
@@ -3397,10 +3406,14 @@ function ProviderSettingsCard({
             </select>
           )}
         </Field>
-        {preset === "piper" ? (
+        {preset === "piper" || preset === "codex" ? (
           <div className="provider-endpoint">
             <small>Exécution</small>
-            <code>Locale sur ce serveur — aucune clé API</code>
+            <code>
+              {preset === "piper"
+                ? "Locale sur ce serveur — aucune clé API"
+                : "Codex CLI sur ce serveur — connexion ChatGPT"}
+            </code>
           </div>
         ) : preset === "custom" ? (
           <Field label="URL API personnalisée">
@@ -3417,7 +3430,7 @@ function ProviderSettingsCard({
             <code>{effectiveBaseUrl}</code>
           </div>
         )}
-        {preset !== "piper" && (
+        {preset !== "piper" && preset !== "codex" && (
           <Field label="Clé API">
             <input
               type="password"
@@ -3462,6 +3475,111 @@ function ProviderSettingsCard({
           Piper génère la narration directement sur votre serveur, sans quota ni
           coût de fournisseur. Béatrice est la voix proposée par défaut.
         </p>
+      )}
+      {provider.type === "text" && preset === "codex" && (
+        <CodexConnection api={api} />
+      )}
+    </div>
+  );
+}
+
+type CodexConnectionStatus = {
+  connected: boolean;
+  status: "idle" | "pending" | "connected" | "error";
+  url?: string;
+  code?: string;
+  detail?: string;
+  error?: string;
+};
+
+function CodexConnection({
+  api,
+}: {
+  api: <T>(url: string, init?: RequestInit) => Promise<T>;
+}) {
+  const [status, setStatus] = useState<CodexConnectionStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const refresh = useCallback(
+    () => api<CodexConnectionStatus>("/api/providers/codex").then(setStatus),
+    [api],
+  );
+  useEffect(() => {
+    queueMicrotask(() => void refresh());
+  }, [refresh]);
+  useEffect(() => {
+    if (status?.status !== "pending") return;
+    const timer = window.setInterval(() => void refresh(), 2_000);
+    return () => window.clearInterval(timer);
+  }, [refresh, status?.status]);
+  return (
+    <div className="provider-note codex-connection">
+      <strong>Connexion Codex CLI</strong>
+      {status?.connected ? (
+        <>
+          <p>
+            Compte ChatGPT connecté. Le scénario peut utiliser ton abonnement
+            Codex.
+          </p>
+          <button
+            type="button"
+            className="ghost compact"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                setStatus(
+                  await api<CodexConnectionStatus>("/api/providers/codex", {
+                    method: "POST",
+                    body: JSON.stringify({ action: "logout" }),
+                  }),
+                );
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Déconnecter Codex
+          </button>
+        </>
+      ) : (
+        <>
+          <p>
+            La connexion reste enregistrée uniquement dans le volume privé du
+            serveur.
+          </p>
+          {status?.url && status.code && (
+            <div className="store-url-example">
+              <small>Ouvre cette adresse puis saisis le code</small>
+              <a href={status.url} target="_blank" rel="noreferrer">
+                {status.url}
+              </a>
+              <code>{status.code}</code>
+            </div>
+          )}
+          {status?.error && <span className="field-error">{status.error}</span>}
+          <button
+            type="button"
+            className="secondary compact"
+            disabled={busy || status?.status === "pending"}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                setStatus(
+                  await api<CodexConnectionStatus>("/api/providers/codex", {
+                    method: "POST",
+                    body: JSON.stringify({ action: "start" }),
+                  }),
+                );
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {status?.status === "pending"
+              ? "Connexion en attente…"
+              : "Connecter mon compte ChatGPT"}
+          </button>
+        </>
       )}
     </div>
   );
