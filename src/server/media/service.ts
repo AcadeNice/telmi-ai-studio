@@ -339,20 +339,6 @@ export async function regenerateMedia(
       const prompt = input.prompt?.trim() || metadata.prompt?.trim();
       if (!prompt)
         throw new ApiError(400, "PROMPT_REQUIRED", "Le prompt est requis.");
-      const cover =
-        asset.type === "image"
-          ? db
-              .select()
-              .from(generatedAssets)
-              .where(
-                and(
-                  eq(generatedAssets.versionId, versionId),
-                  eq(generatedAssets.type, "cover"),
-                  sql`${generatedAssets.sceneKey} is null`,
-                ),
-              )
-              .get()
-          : undefined;
       const narrative = loadNarrative(versionId);
       const choiceId = asset.sceneKey?.startsWith("choice:")
         ? asset.sceneKey.slice("choice:".length)
@@ -363,7 +349,6 @@ export async function regenerateMedia(
       await generateImage(
         prompt,
         temporary,
-        cover?.path,
         Boolean(
           narrative && choice && isMultipleChoiceImage(narrative, choice),
         ),

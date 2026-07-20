@@ -50,14 +50,13 @@ async function generateWithOpenRouter(
 export async function generateImage(
   prompt: string,
   outputPath: string,
-  referenceImagePath?: string,
   choiceNavigation = false,
 ) {
   const config = getProviderConfig("image");
   if (config.provider.toLowerCase() === "codex") {
     const temporary = `${outputPath}.codex-source`;
     try {
-      await generateImageWithCodex(prompt, temporary, referenceImagePath);
+      await generateImageWithCodex(prompt, temporary);
       await fs.mkdir(path.dirname(outputPath), { recursive: true });
       await sharp(temporary)
         .resize(640, 480, { fit: "cover" })

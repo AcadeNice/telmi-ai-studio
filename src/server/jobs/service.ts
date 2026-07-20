@@ -407,6 +407,29 @@ function recordAsset(
   });
 }
 
+async function reusableImage(
+  versionId: string,
+  type: "cover" | "image",
+  sceneKey: string | null,
+  filePath: string,
+) {
+  const asset = db
+    .select()
+    .from(generatedAssets)
+    .where(
+      and(
+        eq(generatedAssets.versionId, versionId),
+        eq(generatedAssets.type, type),
+        sceneKey === null
+          ? sql`${generatedAssets.sceneKey} is null`
+          : eq(generatedAssets.sceneKey, sceneKey),
+      ),
+    )
+    .get();
+  if (!asset || asset.path !== filePath) return false;
+  return validateImage(filePath).catch(() => false);
+}
+
 async function runValidate(jobId: string) {
   const { version } = jobContext(jobId);
   const narrative = loadNarrative(version.id);
@@ -528,21 +551,47 @@ async function runImages(jobId: string) {
     visualContext,
     parameters.childName,
   );
-  await generateImage(coverPrompt, coverPath);
+  const sceneImages =
+    illustrationMode === "every-scene"
+      ? narrative.scenes.filter((scene) => scene.imagePrompt)
+      : [];
+  const choiceImages =
+    illustrationMode === "cover" ? [] : narrative.choices;
+  const totalGenerations = 1 + sceneImages.length + choiceImages.length;
+  let completedGenerations = 0;
+  const reportProgress = () => {
+    completedGenerations += 1;
+    db.update(generationJobs)
+      .set({
+        currentStep: `images (${completedGenerations}/${totalGenerations})`,
+        progress: Math.min(
+          99,
+          67 + Math.round((completedGenerations / totalGenerations) * 32),
+        ),
+        updatedAt: new Date(),
+      })
+      .where(eq(generationJobs.id, jobId))
+      .run();
+  };
+
+  if (!(await reusableImage(version.id, "cover", null, coverPath))) {
+    await generateImage(coverPrompt, coverPath);
+    await recordAsset(
+      version.id,
+      null,
+      "cover",
+      imageProvider,
+      coverPath,
+      "image/png",
+      {
+        prompt: coverPrompt,
+        label: "Couverture",
+        source: "generated",
+      },
+    );
+  }
+  reportProgress();
   await fs.copyFile(coverPath, path.join(base, "title.png"));
-  await recordAsset(
-    version.id,
-    null,
-    "cover",
-    imageProvider,
-    coverPath,
-    "image/png",
-    {
-      prompt: coverPrompt,
-      label: "Couverture",
-      source: "generated",
-    },
-  );
   await recordAsset(
     version.id,
     null,
@@ -566,20 +615,23 @@ async function runImages(jobId: string) {
       visualContext,
       parameters.childName,
     );
-    await generateImage(prompt, file, coverPath);
-    await recordAsset(
-      version.id,
-      scene.id,
-      "image",
-      imageProvider,
-      file,
-      "image/png",
-      {
-        prompt,
-        label: scene.title,
-        source: "generated",
-      },
-    );
+    if (!(await reusableImage(version.id, "image", scene.id, file))) {
+      await generateImage(prompt, file);
+      await recordAsset(
+        version.id,
+        scene.id,
+        "image",
+        imageProvider,
+        file,
+        "image/png",
+        {
+          prompt,
+          label: scene.title,
+          source: "generated",
+        },
+      );
+    }
+    reportProgress();
   }
   for (const choice of narrative.choices) {
     if (illustrationMode === "cover") break;
@@ -590,25 +642,28 @@ async function runImages(jobId: string) {
       visualContext,
       parameters.childName,
     );
-    await generateImage(
-      prompt,
-      file,
-      coverPath,
-      isMultipleChoiceImage(narrative, choice),
-    );
-    await recordAsset(
-      version.id,
-      `choice:${choice.id}`,
-      "image",
-      imageProvider,
-      file,
-      "image/png",
-      {
+    const sceneKey = `choice:${choice.id}`;
+    if (!(await reusableImage(version.id, "image", sceneKey, file))) {
+      await generateImage(
         prompt,
-        label: `Choix : ${choiceDisplayLabel(narrative, choice)}`,
-        source: "generated",
-      },
-    );
+        file,
+        isMultipleChoiceImage(narrative, choice),
+      );
+      await recordAsset(
+        version.id,
+        sceneKey,
+        "image",
+        imageProvider,
+        file,
+        "image/png",
+        {
+          prompt,
+          label: `Choix : ${choiceDisplayLabel(narrative, choice)}`,
+          source: "generated",
+        },
+      );
+    }
+    reportProgress();
   }
   const generated =
     (illustrationMode === "every-scene"

@@ -261,7 +261,6 @@ export async function generateNarrativeWithCodex(
 export async function generateImageWithCodex(
   prompt: string,
   outputPath: string,
-  referenceImagePath?: string,
 ) {
   const status = await getCodexLoginStatus();
   if (!status.connected)
@@ -272,17 +271,11 @@ export async function generateImageWithCodex(
     );
   const workDirectory = path.join("/tmp", `telmi-codex-image-${randomUUID()}`);
   const requestedOutput = path.join(workDirectory, "telmi-image.png");
-  const referenceCopy = path.join(workDirectory, "story-reference.png");
   const generatedImagesDirectory = path.join(CODEX_HOME, "generated_images");
   const generationStartedAt = Date.now();
   await fs.mkdir(workDirectory, { recursive: true });
-  if (referenceImagePath)
-    await fs.copyFile(referenceImagePath, referenceCopy).catch(() => undefined);
-  const hasReference = await fs
-    .access(referenceCopy)
-    .then(() => true)
-    .catch(() => false);
-  const instruction = `$telmi-story-illustrator Crée une illustration Telmi pour une histoire enfantine.\n\nRôle de l’image et contexte visuel : ${prompt}\n\n${hasReference ? `Image de référence canonique pour l’identité et le style : ${referenceCopy}.` : "Aucune image de référence canonique n’est encore disponible : établir l’identité visuelle de cette histoire."}\n\nEnregistre le résultat final dans ${requestedOutput}.`;
+  const instruction = `$telmi-story-illustrator Crée une illustration Telmi pour une histoire enfantine.\n\nRôle de l’image et contexte visuel : ${prompt}\n\nRespecte strictement la description textuelle constante du personnage, de l’univers et du style graphique. N’essaie pas de lire un fichier de référence local.\n\nEnregistre le résultat final dans ${requestedOutput}.`;
+  let diagnosticOutput = "";
   try {
     await new Promise<void>((resolve, reject) => {
       const child = spawn(
@@ -305,13 +298,17 @@ export async function generateImageWithCodex(
           stdio: ["ignore", "pipe", "pipe"],
         },
       );
-      let errorOutput = "";
       const timer = setTimeout(() => {
         child.kill("SIGTERM");
         reject(new Error("Codex Imagegen a dépassé le délai de génération."));
       }, 360_000);
       child.stderr.on("data", (chunk: Buffer) => {
-        errorOutput = `${errorOutput}${chunk.toString("utf8")}`.slice(
+        diagnosticOutput = `${diagnosticOutput}${chunk.toString("utf8")}`.slice(
+          -MAX_OUTPUT_BYTES,
+        );
+      });
+      child.stdout.on("data", (chunk: Buffer) => {
+        diagnosticOutput = `${diagnosticOutput}${chunk.toString("utf8")}`.slice(
           -MAX_OUTPUT_BYTES,
         );
       });
@@ -325,7 +322,7 @@ export async function generateImageWithCodex(
         else
           reject(
             new Error(
-              cleanOutput(errorOutput).trim() ||
+              cleanOutput(diagnosticOutput).trim() ||
                 `Codex Imagegen : code ${code}`,
             ),
           );
@@ -358,8 +355,19 @@ export async function generateImageWithCodex(
       const generated = candidates.sort(
         (left, right) => right.modifiedAt - left.modifiedAt,
       )[0];
-      if (!generated)
-        throw new Error("Codex Imagegen n’a produit aucun fichier image.");
+      if (!generated) {
+        const detail = cleanOutput(diagnosticOutput)
+          .replace(/\/(?:data|tmp)\/[^\s'"`]+/g, "[chemin masqué]")
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .slice(-4)
+          .join(" | ")
+          .slice(0, 800);
+        throw new Error(
+          `Codex Imagegen n’a produit aucun fichier image.${detail ? ` Détail : ${detail}` : ""}`,
+        );
+      }
       sourcePath = generated.path;
     }
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
