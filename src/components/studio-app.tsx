@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArchiveRestore,
+  BadgeEuro,
   Bell,
   BookHeart,
   BookOpen,
   CheckCircle2,
   ChevronRight,
-  CircleDollarSign,
   Copy,
   ExternalLink,
   FileText,
@@ -74,6 +74,10 @@ type InternalNotification = {
   title: string;
   message: string;
   readAt?: string | null;
+};
+type DashboardSummary = {
+  monthlySpentCents: number;
+  monthlyBudgetCents: number;
 };
 type ElevenLabsVoice = {
   voice_id: string;
@@ -178,6 +182,10 @@ export function StudioApp() {
   const [notifications, setNotifications] = useState<InternalNotification[]>(
     [],
   );
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary>({
+    monthlySpentCents: 0,
+    monthlyBudgetCents: 0,
+  });
 
   const api = useCallback(
     async <T,>(url: string, init?: RequestInit) => {
@@ -192,14 +200,16 @@ export function StudioApp() {
   );
 
   const refresh = useCallback(async () => {
-    const [active, all, alerts] = await Promise.all([
+    const [active, all, alerts, summary] = await Promise.all([
       api<{ list: Story[] }>("/api/stories"),
       api<{ list: Story[] }>("/api/stories?deleted=true"),
       api<{ list: InternalNotification[] }>("/api/notifications"),
+      api<DashboardSummary>("/api/dashboard"),
     ]);
     setStories(active.list);
     setDeleted(all.list.filter((item) => item.deletedAt));
     setNotifications(alerts.list);
+    setDashboardSummary(summary);
   }, [api]);
 
   useEffect(() => {
@@ -373,6 +383,7 @@ export function StudioApp() {
         {screen === "dashboard" && (
           <Dashboard
             stories={stories}
+            summary={dashboardSummary}
             onCreate={() => navigate("create")}
             onOpen={openStory}
           />
@@ -604,16 +615,23 @@ function Login({ onDone }: { onDone: (csrf: string) => void }) {
 
 function Dashboard({
   stories,
+  summary,
   onCreate,
   onOpen,
 }: {
   stories: Story[];
+  summary: DashboardSummary;
   onCreate: () => void;
   onOpen: (story: Story) => void;
 }) {
   const published = stories.filter((story) =>
     story.versions?.some((version) => version.status === "published"),
   ).length;
+  const formatEuros = (cents: number) =>
+    new Intl.NumberFormat("fr-FR", {
+      style: "currency",
+      currency: "EUR",
+    }).format(cents / 100);
   return (
     <div className="page-stack">
       <section className="hero">
@@ -637,7 +655,15 @@ function Dashboard({
       <section className="stats-grid">
         <Stat icon={<BookOpen />} value={stories.length} label="histoires" />
         <Stat icon={<ArchiveRestore />} value={published} label="publiées" />
-        <Stat icon={<CircleDollarSign />} value="—" label="ce mois-ci" />
+        <Stat
+          icon={<BadgeEuro />}
+          value={formatEuros(summary.monthlySpentCents)}
+          label={
+            summary.monthlyBudgetCents > 0
+              ? `dépensés ce mois-ci sur ${formatEuros(summary.monthlyBudgetCents)}`
+              : "dépensés ce mois-ci"
+          }
+        />
       </section>
       <SectionTitle
         title="Histoires récentes"
@@ -1756,8 +1782,7 @@ function StoryStudio({
       });
       onNotice({
         tone: "ok",
-        text:
-          "Le ZIP a été recompilé et la version du store privé a été mise à jour.",
+        text: "Le ZIP a été recompilé et la version du store privé a été mise à jour.",
       });
       await loadMedia();
       onRefresh();
@@ -1984,7 +2009,7 @@ function StoryStudio({
       </div>
       {budgetConfirmation && (
         <div className="budget-confirmation page-card">
-          <CircleDollarSign />
+          <BadgeEuro />
           <div>
             <h3>Confirmer le dépassement du budget</h3>
             <p>
