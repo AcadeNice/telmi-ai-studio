@@ -125,6 +125,21 @@ type NarrativeProgress = {
   updatedAt?: string;
 };
 
+type GenerationLogLine = {
+  at?: string | Date | null;
+  message: string;
+  tone?: "normal" | "error" | "success";
+};
+
+type JobStep = {
+  step: string;
+  status: string;
+  attempts?: number;
+  error?: string | null;
+  createdAt?: string | Date | null;
+  updatedAt?: string | Date | null;
+};
+
 class ApiClientError extends Error {
   constructor(
     public code: string,
@@ -902,9 +917,12 @@ function CreationWizard({
       <div className="wizard-body">
         {step === 1 && (
           <>
-            <h2>À qui raconte-t-on cette histoire ?</h2>
+            <h2>À propos de cette histoire</h2>
             <div className="form-grid">
-              <Field label="Prénom">
+              <Field
+                label="Prénom du personnage principal"
+                hint="Indiquez le prénom qui sera utilisé dans le récit."
+              >
                 <input
                   value={params.childName}
                   onChange={(e) =>
@@ -912,7 +930,10 @@ function CreationWizard({
                   }
                 />
               </Field>
-              <Field label="Âge">
+              <Field
+                label="Âge de l’enfant à qui est destinée l’histoire"
+                hint="L’âge adapte le vocabulaire, la durée des scènes et les thèmes."
+              >
                 <input
                   type="number"
                   min={2}
@@ -923,7 +944,10 @@ function CreationWizard({
                   }
                 />
               </Field>
-              <Field label="Durée cible">
+              <Field
+                label="Durée cible"
+                hint="Choisissez la durée approximative d’un parcours de l’histoire."
+              >
                 <select
                   value={params.targetDurationMinutes}
                   onChange={(e) =>
@@ -947,13 +971,19 @@ function CreationWizard({
           <>
             <h2>Imaginons l’aventure</h2>
             <div className="form-grid">
-              <Field label="Titre de travail">
+              <Field
+                label="Titre de l’histoire"
+                hint="Donnez un titre simple ; il pourra encore évoluer avec le scénario."
+              >
                 <input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                 />
               </Field>
-              <Field label="Personnage principal">
+              <Field
+                label="Personnage principal"
+                hint="Décrivez qui mène l’aventure : licorne, enfant, animal, robot…"
+              >
                 <input
                   value={params.mainCharacter}
                   onChange={(e) =>
@@ -961,7 +991,10 @@ function CreationWizard({
                   }
                 />
               </Field>
-              <Field label="Univers">
+              <Field
+                label="Univers"
+                hint="Indiquez le lieu et l’ambiance générale de l’aventure."
+              >
                 <input
                   value={params.universe}
                   onChange={(e) =>
@@ -969,7 +1002,10 @@ function CreationWizard({
                   }
                 />
               </Field>
-              <Field label="Valeur à transmettre">
+              <Field
+                label="Valeur à transmettre"
+                hint="Précisez l’idée que l’enfant doit retenir : partage, courage, entraide…"
+              >
                 <input
                   value={params.value}
                   onChange={(e) =>
@@ -1446,16 +1482,93 @@ function formatVoiceLabel(voice: TtsVoice) {
 
 function Field({
   label,
+  hint,
   children,
 }: {
   label: string;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
     <label className="field">
       <span>{label}</span>
+      {hint && <small className="field-hint">{hint}</small>}
       {children}
     </label>
+  );
+}
+
+function GenerationTerminal({
+  title,
+  subtitle,
+  percent,
+  running,
+  lines,
+  defaultOpen = false,
+}: {
+  title: string;
+  subtitle: string;
+  percent: number;
+  running: boolean;
+  lines: GenerationLogLine[];
+  defaultOpen?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(defaultOpen);
+  return (
+    <section className="scenario-terminal" aria-live="polite">
+      <div className="scenario-terminal-heading">
+        <div>
+          <Terminal />
+          <div>
+            <strong>{title}</strong>
+            <small>{subtitle}</small>
+          </div>
+        </div>
+        <span>{percent}%</span>
+      </div>
+      <div className="progress scenario-progress">
+        <i style={{ width: `${percent}%` }} />
+      </div>
+      <div
+        className={`generation-terminal-details ${expanded ? "is-open" : ""}`}
+      >
+        <button
+          type="button"
+          className="generation-terminal-toggle"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <Terminal /> Voir le terminal
+        </button>
+        {expanded && (
+          <div className="scenario-terminal-output">
+            {lines.map((line, index) => (
+              <div
+                className={line.tone ? `terminal-line-${line.tone}` : undefined}
+                key={`${String(line.at ?? "line")}-${index}`}
+              >
+                <time>
+                  {line.at
+                    ? new Date(line.at).toLocaleTimeString("fr-FR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                      })
+                    : "—"}
+                </time>
+                <span>{line.message}</span>
+              </div>
+            ))}
+            {running && (
+              <div className="scenario-terminal-cursor">
+                <time>···</time>
+                <span>Génération en cours…</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -1650,7 +1763,8 @@ function StoryStudio({
     status: string;
     progress: number;
     currentStep?: string | null;
-    steps?: Array<{ step: string; status: string }>;
+    error?: string | null;
+    steps?: JobStep[];
   } | null>(story.latestJob ?? null);
   const load = useCallback(async () => {
     if (!version) return;
@@ -1697,6 +1811,15 @@ function StoryStudio({
   useEffect(() => {
     queueMicrotask(() => setJob(story.latestJob ?? null));
   }, [story.latestJob]);
+  useEffect(() => {
+    if (!job?.id || job.steps) return;
+    queueMicrotask(
+      () =>
+        void api<typeof job>(`/api/generation-jobs/${job.id}`)
+          .then(setJob)
+          .catch(() => undefined),
+    );
+  }, [api, job]);
   useEffect(() => {
     queueMicrotask(() =>
       setValidationExpanded(Boolean(validation?.issues.length)),
@@ -2049,43 +2172,20 @@ function StoryStudio({
         </div>
       </div>
       {scenarioProgress && scenarioProgress.status !== "idle" && (
-        <section className="scenario-terminal page-card" aria-live="polite">
-          <div className="scenario-terminal-heading">
-            <div>
-              <Terminal />
-              <div>
-                <strong>Suivi de la génération Codex</strong>
-                <small>
-                  Journal sécurisé · les prompts et données privées sont masqués
-                </small>
-              </div>
-            </div>
-            <span>{scenarioProgress.percent}%</span>
-          </div>
-          <div className="progress scenario-progress">
-            <i style={{ width: `${scenarioProgress.percent}%` }} />
-          </div>
-          <div className="scenario-terminal-output">
-            {scenarioProgress.lines.map((line, index) => (
-              <div key={`${line.at}-${index}`}>
-                <time>
-                  {new Date(line.at).toLocaleTimeString("fr-FR", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                  })}
-                </time>
-                <span>{line.message}</span>
-              </div>
-            ))}
-            {scenarioProgress.status === "running" && (
-              <div className="scenario-terminal-cursor">
-                <time>···</time>
-                <span>Codex travaille…</span>
-              </div>
-            )}
-          </div>
-        </section>
+        <div className="page-card terminal-card-wrapper">
+          <GenerationTerminal
+            title="Suivi de la génération du scénario"
+            subtitle="Journal sécurisé · les prompts et données privées sont masqués"
+            percent={scenarioProgress.percent}
+            running={scenarioProgress.status === "running"}
+            defaultOpen={scenarioProgress.status === "failed"}
+            lines={scenarioProgress.lines.map((line) => ({
+              at: line.at,
+              message: line.message,
+              tone: scenarioProgress.status === "failed" ? "error" : "normal",
+            }))}
+          />
+        </div>
       )}
       {budgetConfirmation && (
         <div className="budget-confirmation page-card">
@@ -2139,6 +2239,33 @@ function StoryStudio({
           <div className="progress">
             <i style={{ width: `${job.progress}%` }} />
           </div>
+          <GenerationTerminal
+            title="Suivi de la génération des médias"
+            subtitle="Étapes techniques, reprises et erreurs du travail en cours"
+            percent={job.progress}
+            running={!["completed", "failed", "cancelled"].includes(job.status)}
+            defaultOpen={job.status === "failed"}
+            lines={[
+              ...(job.steps ?? []).map((step) => ({
+                at: step.updatedAt ?? step.createdAt,
+                message: `${step.step} · ${step.status}${step.attempts ? ` · tentative ${step.attempts}` : ""}${step.error ? ` · ${step.error}` : ""}`,
+                tone:
+                  step.status === "failed"
+                    ? ("error" as const)
+                    : step.status === "completed"
+                      ? ("success" as const)
+                      : ("normal" as const),
+              })),
+              ...(job.error
+                ? [
+                    {
+                      message: job.error,
+                      tone: "error" as const,
+                    },
+                  ]
+                : []),
+            ]}
+          />
           {job.status === "failed" && (
             <button
               className="secondary"
@@ -2462,6 +2589,14 @@ function MediaReviewPanel({
   onNotice: (notice: { tone: "ok" | "error" | "info"; text: string }) => void;
   onRefresh: () => void;
 }) {
+  const [voices, setVoices] = useState<TtsVoice[]>([]);
+  const [voicesError, setVoicesError] = useState("");
+  const [mediaOperation, setMediaOperation] = useState<{
+    title: string;
+    percent: number;
+    status: "running" | "completed" | "failed";
+    lines: GenerationLogLine[];
+  } | null>(null);
   const images = review.list.filter((asset) =>
     ["cover", "image"].includes(asset.type),
   );
@@ -2471,6 +2606,25 @@ function MediaReviewPanel({
   const published = version.status === "published";
   const locked =
     (review.readOnly && !published) || version.status === "generating";
+
+  useEffect(() => {
+    let active = true;
+    void api<{ list: TtsVoice[] }>("/api/providers/voices")
+      .then((result) => {
+        if (!active) return;
+        setVoices(result.list);
+        setVoicesError("");
+      })
+      .catch((error) => {
+        if (!active) return;
+        setVoicesError(
+          error instanceof Error ? error.message : "Voix indisponibles.",
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, [api]);
 
   const prepareMediaEdit = async () => {
     if (!published) return true;
@@ -2492,8 +2646,23 @@ function MediaReviewPanel({
     input: { prompt?: string; voiceId?: string },
   ) => {
     onBusy(`regenerate:${asset.id}`);
+    const startedAt = new Date();
+    setMediaOperation({
+      title: `Régénération · ${asset.label}`,
+      percent: 10,
+      status: "running",
+      lines: [
+        {
+          at: startedAt,
+          message: `Préparation du média avec ${asset.provider ?? "le fournisseur configuré"}.`,
+        },
+      ],
+    });
     try {
-      if (!(await prepareMediaEdit())) return;
+      if (!(await prepareMediaEdit())) {
+        setMediaOperation(null);
+        return;
+      }
       onChange(
         await api<MediaReview>(
           `/api/stories/${storyId}/versions/${version.id}/media/${asset.id}/regenerate`,
@@ -2504,11 +2673,41 @@ function MediaReviewPanel({
         tone: "ok",
         text: `« ${asset.label} » a été régénéré. Vérifiez le nouveau résultat.`,
       });
+      setMediaOperation((current) =>
+        current
+          ? {
+              ...current,
+              percent: 100,
+              status: "completed",
+              lines: [
+                ...current.lines,
+                {
+                  at: new Date(),
+                  message: "Le nouveau média est prêt pour votre contrôle.",
+                  tone: "success",
+                },
+              ],
+            }
+          : null,
+      );
       onRefresh();
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMediaOperation((current) =>
+        current
+          ? {
+              ...current,
+              status: "failed",
+              lines: [
+                ...current.lines,
+                { at: new Date(), message, tone: "error" },
+              ],
+            }
+          : null,
+      );
       onNotice({
         tone: "error",
-        text: error instanceof Error ? error.message : String(error),
+        text: message,
       });
     } finally {
       onBusy("");
@@ -2594,6 +2793,17 @@ function MediaReviewPanel({
         </div>
       )}
 
+      {mediaOperation && (
+        <GenerationTerminal
+          title={mediaOperation.title}
+          subtitle="Suivi sécurisé de cette régénération individuelle"
+          percent={mediaOperation.percent}
+          running={mediaOperation.status === "running"}
+          defaultOpen={mediaOperation.status === "failed"}
+          lines={mediaOperation.lines}
+        />
+      )}
+
       <div className="media-section-heading">
         <ImageIcon />
         <div>
@@ -2628,7 +2838,9 @@ function MediaReviewPanel({
             asset={asset}
             disabled={locked || Boolean(busy)}
             busy={busy.endsWith(asset.id)}
-            onRegenerate={() => regenerate(asset, { voiceId: asset.voiceId })}
+            voices={voices}
+            voicesError={voicesError}
+            onRegenerate={(voiceId) => regenerate(asset, { voiceId })}
             onUpload={(file) => upload(asset, file)}
           />
         ))}
@@ -2738,16 +2950,22 @@ function MediaAudioCard({
   asset,
   disabled,
   busy,
+  voices,
+  voicesError,
   onRegenerate,
   onUpload,
 }: {
   asset: MediaReviewAsset;
   disabled: boolean;
   busy: boolean;
-  onRegenerate: () => Promise<void>;
+  voices: TtsVoice[];
+  voicesError: string;
+  onRegenerate: (voiceId: string) => Promise<void>;
   onUpload: (file: File) => Promise<void>;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [voiceId, setVoiceId] = useState(asset.voiceId ?? "");
+  const selectedVoice = voices.find((voice) => voice.voice_id === voiceId);
   return (
     <article className="media-audio-card">
       <div className="audio-card-copy">
@@ -2769,10 +2987,34 @@ function MediaAudioCard({
         <source src={asset.contentUrl} type="audio/mpeg" />
       </audio>
       <div className="media-card-actions">
+        <label className="audio-voice-selector">
+          <span>Voix pour cet extrait</span>
+          <select
+            value={voiceId}
+            disabled={disabled || voices.length === 0}
+            onChange={(event) => setVoiceId(event.target.value)}
+          >
+            {asset.voiceId &&
+              !voices.some((voice) => voice.voice_id === asset.voiceId) && (
+                <option value={asset.voiceId}>{asset.voiceId}</option>
+              )}
+            {voices.map((voice) => (
+              <option key={voice.voice_id} value={voice.voice_id}>
+                {formatVoiceLabel(voice)}
+              </option>
+            ))}
+          </select>
+          <small>
+            {voicesError ||
+              (selectedVoice
+                ? `La régénération utilisera ${selectedVoice.name}.`
+                : "Choisissez une voix, puis régénérez cet extrait pour l’écouter.")}
+          </small>
+        </label>
         <button
           className="secondary compact"
-          disabled={disabled || !asset.voiceId}
-          onClick={() => void onRegenerate()}
+          disabled={disabled || !voiceId}
+          onClick={() => void onRegenerate(voiceId)}
         >
           <RotateCcw /> {busy ? "Traitement…" : "Régénérer"}
         </button>
