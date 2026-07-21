@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   formatApproximateUsdRange,
   inferProviderPreset,
+  listProviderModels,
   matchesOpenRouterOutput,
   matchesType,
   openAiImagePriceLabel,
@@ -9,6 +10,8 @@ import {
 } from "./models";
 
 describe("provider model catalogs", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it("infers known providers from legacy URLs", () => {
     expect(
       inferProviderPreset("openai", "https://openrouter.ai/api/v1", "image"),
@@ -56,5 +59,24 @@ describe("provider model catalogs", () => {
       "≈ $0.005–$0.036 · 1024×1024 selon qualité",
     );
     expect(openAiImagePriceLabel("unknown-image-model")).toBeUndefined();
+  });
+
+  it("keeps the specialized OpenAI image catalog when /models omits it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    const models = await listProviderModels({
+      type: "image",
+      preset: "openai",
+      apiKey: "test-key",
+    });
+    expect(models[0]?.id).toBe("gpt-image-2");
+    expect(models[0]?.supportsReferenceImage).toBe(true);
   });
 });

@@ -30,6 +30,59 @@ const PRESET_BASE_URLS: Partial<Record<ProviderPreset, string>> = {
   elevenlabs: "https://api.elevenlabs.io/v1",
 };
 
+const OPENAI_IMAGE_MODELS: ProviderModel[] = [
+  {
+    id: "gpt-image-2",
+    name: "GPT Image 2 — recommandé",
+    description:
+      "Modèle OpenAI actuel pour la génération et l’édition d’images de haute qualité.",
+    supportsReferenceImage: true,
+  },
+  {
+    id: "gpt-image-1.5",
+    name: "GPT Image 1.5 — ancien",
+    description:
+      "Ancienne génération GPT Image, encore utile pour comparer qualité et coût.",
+    limitations:
+      "Modèle déprécié par OpenAI : préférez GPT Image 2 pour un nouveau projet.",
+    supportsReferenceImage: true,
+  },
+  {
+    id: "gpt-image-1",
+    name: "GPT Image 1 — ancien",
+    description: "Ancien modèle OpenAI de génération et d’édition d’images.",
+    limitations:
+      "Modèle déprécié par OpenAI, conservé uniquement pour compatibilité.",
+    supportsReferenceImage: true,
+  },
+  {
+    id: "gpt-image-1-mini",
+    name: "GPT Image 1 mini — économique, ancien",
+    description:
+      "Ancienne variante économique de GPT Image 1, adaptée aux essais peu coûteux.",
+    limitations:
+      "Moins fidèle et désormais déprécié ; déconseillé pour la cohérence finale d’un livre.",
+    supportsReferenceImage: true,
+  },
+  {
+    id: "dall-e-3",
+    name: "DALL·E 3 — historique",
+    description: "Ancien modèle de génération à partir de texte.",
+    limitations:
+      "Déprécié et sans réutilisation fiable d’une image de référence.",
+    supportsReferenceImage: false,
+  },
+  {
+    id: "dall-e-2",
+    name: "DALL·E 2 — historique",
+    description:
+      "Premier ancien modèle DALL·E encore listé pour compatibilité.",
+    limitations:
+      "Qualité inférieure, déprécié et sans cohérence par image de référence.",
+    supportsReferenceImage: false,
+  },
+];
+
 export function providerBaseUrl(
   preset: ProviderPreset,
   customBaseUrl?: string | null,
@@ -69,7 +122,7 @@ export async function listProviderModels(input: {
   preset: ProviderPreset;
   apiKey?: string;
   baseUrl?: string | null;
-}) {
+}): Promise<ProviderModel[]> {
   if (input.preset === "codex")
     return input.type === "image"
       ? [
@@ -144,11 +197,25 @@ export async function listProviderModels(input: {
     input.preset === "custom",
   );
   return input.type === "image" && input.preset === "openai"
-    ? models.map((model) => ({
+    ? mergeProviderModels(OPENAI_IMAGE_MODELS, models).map((model) => ({
         ...enrichImageModel(model),
         priceLabel: openAiImagePriceLabel(model.id),
       }))
     : models;
+}
+
+function mergeProviderModels(
+  preferred: ProviderModel[],
+  discovered: ProviderModel[],
+) {
+  const byId = new Map(discovered.map((model) => [model.id, model]));
+  return [
+    ...preferred.map((model) => ({ ...byId.get(model.id), ...model })),
+    ...discovered.filter(
+      (model) =>
+        !preferred.some((preferredModel) => preferredModel.id === model.id),
+    ),
+  ];
 }
 
 function throwApiKeyRequired(): never {
@@ -261,7 +328,7 @@ async function attachOpenRouterImagePrices(
           baseUrl,
           model.id,
           apiKey,
-        ).catch(() => undefined);
+        ).catch(() => "prix indisponible");
         result.push({ ...model, priceLabel });
       }
     },
@@ -287,7 +354,7 @@ async function openRouterImagePriceLabel(
       signal: AbortSignal.timeout(10_000),
     },
   );
-  if (!response.ok) return undefined;
+  if (!response.ok) return "prix indisponible";
   const payload = (await response.json().catch(() => null)) as {
     endpoints?: Array<{
       pricing?: Array<{
@@ -317,12 +384,22 @@ async function openRouterImagePriceLabel(
         Number.isFinite(price.cost_usd),
     )
     .map((price) => Number(price.cost_usd));
-  return megapixelPrices.length
-    ? formatApproximateUsdRange(
-        megapixelPrices.map((price) => price * 1.048576),
-        "image 1024×1024",
-      )
-    : undefined;
+  if (megapixelPrices.length)
+    return formatApproximateUsdRange(
+      megapixelPrices.map((price) => price * 1.048576),
+      "image 1024×1024",
+    );
+  const tokenPriced = (payload?.endpoints ?? [])
+    .flatMap((endpoint) => endpoint.pricing ?? [])
+    .some(
+      (price) =>
+        price.billable === "output_image" &&
+        price.unit === "token" &&
+        Number.isFinite(price.cost_usd),
+    );
+  return tokenPriced
+    ? "prix variable · jetons image"
+    : "prix non publié par OpenRouter";
 }
 
 export function formatApproximateUsdRange(
@@ -345,6 +422,7 @@ export function formatApproximateUsdRange(
 
 export function openAiImagePriceLabel(modelId: string) {
   const id = modelId.toLowerCase();
+  if (id.includes("gpt-image-2")) return "prix variable · calculateur OpenAI";
   if (id.includes("gpt-image-1-mini"))
     return "≈ $0.005–$0.036 · 1024×1024 selon qualité";
   if (id.includes("gpt-image-1.5") || id.includes("chatgpt-image"))
@@ -364,8 +442,10 @@ function enrichImageModel(model: ProviderModel): ProviderModel {
       ...model,
       supportsReferenceImage: model.supportsReferenceImage ?? true,
       strengths:
+        model.strengths ??
         "Très bonne fidélité aux consignes, édition d’images et cohérence à partir d’une référence.",
       limitations:
+        model.limitations ??
         "Le coût et le délai augmentent avec la qualité ; le rendu peut être moins stylisé que certains modèles spécialisés.",
     };
   if (id.includes("gemini") || id.includes("nano-banana"))

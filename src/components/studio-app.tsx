@@ -4049,6 +4049,15 @@ function ProviderSettingsCard({
           sont indicatifs, en dollars américains, hors taxes et éventuels frais
           d’achat de crédits, et peuvent varier selon la qualité, le fournisseur
           routé et les changements de tarif.
+          {preset === "openrouter" && (
+            <>
+              {" "}
+              « Prix variable · jetons image » signifie que le montant exact
+              dépend du nombre de jetons produits. « Prix non publié » signifie
+              qu’OpenRouter ne fournit pas de montant convertible en prix par
+              image avant la génération.
+            </>
+          )}
         </p>
       )}
     </div>
