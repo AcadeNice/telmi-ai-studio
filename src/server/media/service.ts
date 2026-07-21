@@ -16,7 +16,13 @@ import {
 import { buildStoryVisualContext } from "@/lib/narrative/image-style";
 import type { CreationParameters } from "@/lib/narrative/schema";
 import { db, ensureDatabase } from "@/server/db";
-import { generatedAssets, stories, storyVersions } from "@/server/db/schema";
+import {
+  generatedAssets,
+  generationJobs,
+  jobSteps,
+  stories,
+  storyVersions,
+} from "@/server/db/schema";
 import { recordUsage } from "@/server/jobs/service";
 import { generateSpeech } from "@/server/providers/tts";
 import { getProviderConfig } from "@/server/providers/config";
@@ -166,6 +172,24 @@ function sameAsset(
   return asset.type === expected.type && asset.sceneKey === expected.sceneKey;
 }
 
+function canEditAudioDuringGeneration(versionId: string) {
+  return Boolean(
+    db
+      .select({ id: jobSteps.id })
+      .from(generationJobs)
+      .innerJoin(jobSteps, eq(jobSteps.jobId, generationJobs.id))
+      .where(
+        and(
+          eq(generationJobs.versionId, versionId),
+          eq(generationJobs.status, "running"),
+          eq(jobSteps.step, "tts"),
+          eq(jobSteps.status, "completed"),
+        ),
+      )
+      .get(),
+  );
+}
+
 export async function getMediaReview(storyId: string, versionId: string) {
   const context = getVersionContext(storyId, versionId);
   const assets = db
@@ -204,6 +228,13 @@ export async function getMediaReview(storyId: string, versionId: string) {
   const complete = expected.every((item) =>
     assets.some((asset) => sameAsset(asset, item)),
   );
+  const normallyEditable = (["validated", "ready"] as string[]).includes(
+    context.version.status,
+  );
+  const audioEditable =
+    normallyEditable ||
+    (context.version.status === "generating" &&
+      canEditAudioDuringGeneration(versionId));
   return {
     list: reviewable,
     complete,
@@ -212,26 +243,14 @@ export async function getMediaReview(storyId: string, versionId: string) {
       assets.some((asset) => sameAsset(asset, item)),
     ).length,
     reviewedAt: context.version.mediaReviewedAt,
-    readOnly: !(["validated", "ready"] as string[]).includes(
-      context.version.status,
-    ),
+    readOnly: !normallyEditable,
+    imageEditable: normallyEditable,
+    audioEditable,
   };
 }
 
 function getScopedAsset(storyId: string, versionId: string, assetId: string) {
   const context = getVersionContext(storyId, versionId);
-  if (context.version.status === "published")
-    throw new ApiError(
-      409,
-      "PUBLISHED_VERSION_IMMUTABLE",
-      "Retirez d’abord cette version du store avant de modifier ses médias.",
-    );
-  if (!(["validated", "ready"] as string[]).includes(context.version.status))
-    throw new ApiError(
-      409,
-      "MEDIA_NOT_EDITABLE",
-      "Attendez la fin de la génération avant de modifier les médias.",
-    );
   const asset = db
     .select()
     .from(generatedAssets)
@@ -247,6 +266,25 @@ function getScopedAsset(storyId: string, versionId: string, assetId: string) {
     !["cover", "image", "title_audio", "audio"].includes(asset.type)
   )
     throw new ApiError(404, "ASSET_NOT_FOUND", "Média introuvable.");
+  if (context.version.status === "published")
+    throw new ApiError(
+      409,
+      "PUBLISHED_VERSION_IMMUTABLE",
+      "Retirez d’abord cette version du store avant de modifier ses médias.",
+    );
+  const normallyEditable = (["validated", "ready"] as string[]).includes(
+    context.version.status,
+  );
+  const audioDuringGeneration =
+    context.version.status === "generating" &&
+    ["title_audio", "audio"].includes(asset.type) &&
+    canEditAudioDuringGeneration(versionId);
+  if (!normallyEditable && !audioDuringGeneration)
+    throw new ApiError(
+      409,
+      "MEDIA_NOT_EDITABLE",
+      "Attendez la fin de la génération avant de modifier les médias.",
+    );
   return { context, asset };
 }
 
@@ -273,7 +311,8 @@ async function invalidateCompiledPack(context: VersionContext) {
       .run();
     tx.update(storyVersions)
       .set({
-        status: "validated",
+        status:
+          context.version.status === "generating" ? "generating" : "validated",
         mediaReviewedAt: null,
         packPath: null,
         updatedAt: new Date(),

@@ -115,6 +115,8 @@ type MediaReview = {
   generatedCount: number;
   reviewedAt?: string | null;
   readOnly: boolean;
+  imageEditable?: boolean;
+  audioEditable?: boolean;
 };
 
 type NarrativeProgress = {
@@ -2612,8 +2614,10 @@ function MediaReviewPanel({
     ["title_audio", "audio"].includes(asset.type),
   );
   const published = version.status === "published";
-  const locked =
-    (review.readOnly && !published) || version.status === "generating";
+  const imagesLocked =
+    !published && !(review.imageEditable ?? !review.readOnly);
+  const audiosLocked =
+    !published && !(review.audioEditable ?? !review.readOnly);
 
   useEffect(() => {
     let active = true;
@@ -2824,7 +2828,7 @@ function MediaReviewPanel({
           <MediaImageCard
             key={`${asset.id}:${asset.contentUrl}`}
             asset={asset}
-            disabled={locked || Boolean(busy)}
+            disabled={imagesLocked || Boolean(busy)}
             busy={busy.endsWith(asset.id)}
             onRegenerate={(prompt) => regenerate(asset, { prompt })}
             onUpload={(file) => upload(asset, file)}
@@ -2844,7 +2848,7 @@ function MediaReviewPanel({
           <MediaAudioCard
             key={`${asset.id}:${asset.contentUrl}`}
             asset={asset}
-            disabled={locked || Boolean(busy)}
+            disabled={audiosLocked || Boolean(busy)}
             busy={busy.endsWith(asset.id)}
             voices={voices}
             voicesError={voicesError}
