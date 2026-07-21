@@ -10,6 +10,7 @@ export type ProviderPreset =
   | "elevenlabs"
   | "piper"
   | "codex"
+  | "claude"
   | "custom";
 
 export type ProviderModel = {
@@ -112,6 +113,7 @@ export function inferProviderPreset(
   if (type === "tts" && normalized === "piper") return "piper";
   if (["text", "image"].includes(type) && normalized === "codex")
     return "codex";
+  if (type === "text" && normalized === "claude") return "claude";
   if (["openrouter", "openai", "mistral", "groq"].includes(normalized))
     return normalized as ProviderPreset;
   return "custom";
@@ -140,6 +142,49 @@ export async function listProviderModels(input: {
           },
         ]
       : listCodexTextModels();
+  if (input.preset === "claude")
+    return input.type === "text"
+      ? [
+          {
+            id: "sonnet",
+            name: "Claude Sonnet — recommandé",
+            description:
+              "Équilibre recommandé entre qualité, vitesse et consommation pour écrire une histoire structurée.",
+            strengths:
+              "Très bon suivi des consignes, narration naturelle et graphes complexes.",
+            limitations:
+              "Moins approfondi qu’Opus pour les scénarios les plus ambitieux.",
+          },
+          {
+            id: "opus",
+            name: "Claude Opus — qualité maximale",
+            description:
+              "Modèle Claude le plus capable pour les scénarios complexes et les réécritures exigeantes.",
+            strengths:
+              "Meilleure profondeur narrative, cohérence globale et raisonnement complexe.",
+            limitations:
+              "Plus lent et consomme davantage le crédit mensuel Agent SDK.",
+          },
+          {
+            id: "haiku",
+            name: "Claude Haiku — rapide",
+            description:
+              "Modèle léger pour les essais rapides et les histoires simples.",
+            strengths: "Rapide et économe en crédit.",
+            limitations:
+              "Moins adapté aux longs graphes interactifs et aux contraintes nombreuses.",
+          },
+          {
+            id: "default",
+            name: "Modèle par défaut du compte",
+            description:
+              "Laisse Claude Code choisir le modèle recommandé pour votre abonnement.",
+            strengths: "Suit automatiquement le modèle par défaut du compte.",
+            limitations:
+              "Le modèle réellement utilisé peut changer selon l’abonnement et les seuils d’usage.",
+          },
+        ]
+      : [];
   if (input.preset === "piper")
     return [
       {

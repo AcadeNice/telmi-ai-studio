@@ -12,6 +12,7 @@ import {
 import { ApiError } from "@/server/api/response";
 import { getProviderConfig } from "./config";
 import { generateNarrativeWithCodex } from "./codex";
+import { generateNarrativeWithClaude } from "./claude";
 
 const graphRules = `
 Règles structurelles obligatoires :
@@ -55,6 +56,16 @@ async function requestStructuredNarrative(
         systemPrompt,
         userPrompt,
         config.model ?? "gpt-5.6-sol",
+        onProgress,
+      ),
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    };
+  if (config.provider.toLowerCase() === "claude")
+    return {
+      raw: await generateNarrativeWithClaude(
+        systemPrompt,
+        userPrompt,
+        config.model ?? "sonnet",
         onProgress,
       ),
       usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
@@ -182,7 +193,7 @@ export async function generateNarrative(
   onProgress?.(78, "Validation du graphe narratif.");
 
   if (!validation.valid) {
-    onProgress?.(82, "Corrections structurelles demandées à Codex.");
+    onProgress?.(82, "Corrections structurelles demandées au fournisseur IA.");
     const repair = await requestStructuredNarrative(
       config,
       `Tu corriges un graphe narratif JSON sans changer le thème, les personnages ni l'intention de l'histoire. Les scènes et choix verrouillés doivent rester strictement identiques. Retourne uniquement un objet conforme au JSON Schema. ${creativeRules} ${graphRules}`,

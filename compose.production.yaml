@@ -17,6 +17,7 @@ services:
       DATABASE_URL: /data/telmi.db
       DATA_DIR: /data
       CODEX_HOME: /data/codex-home
+      CLAUDE_CONFIG_DIR: /data/claude-home
       NEXT_PUBLIC_APP_URL: https://${TELMI_DOMAIN:-telmi.a3n.fr}
       COOKIE_SECURE: "true"
     volumes:

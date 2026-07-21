@@ -3376,6 +3376,7 @@ type ProviderPreset =
   | "elevenlabs"
   | "piper"
   | "codex"
+  | "claude"
   | "custom";
 type ProviderSettings = {
   type: ProviderType;
@@ -3402,6 +3403,7 @@ const providerChoices: Record<
 > = {
   text: [
     { id: "codex", label: "Codex CLI (abonnement ChatGPT)" },
+    { id: "claude", label: "Claude Code CLI (abonnement Claude)" },
     { id: "openrouter", label: "OpenRouter" },
     { id: "openai", label: "OpenAI" },
     { id: "mistral", label: "Mistral AI" },
@@ -3448,6 +3450,10 @@ const providerDefaults: Record<
   codex: {
     baseUrl: "",
     model: "gpt-5.6-sol",
+  },
+  claude: {
+    baseUrl: "",
+    model: "sonnet",
   },
 };
 
@@ -3749,6 +3755,7 @@ function ProviderSettingsCard({
         (preset !== "openrouter" &&
           preset !== "piper" &&
           preset !== "codex" &&
+          preset !== "claude" &&
           !provider.configured)
       )
         return;
@@ -3809,7 +3816,7 @@ function ProviderSettingsCard({
   );
   const defaultStrengths =
     provider.type === "text"
-      ? preset === "codex"
+      ? preset === "codex" || preset === "claude"
         ? "Très bon suivi des contraintes, JSON structuré et scénarios à branches complexes."
         : "Génération structurée du scénario avec les capacités annoncées par le fournisseur."
       : provider.type === "tts"
@@ -3819,8 +3826,8 @@ function ProviderSettingsCard({
         : "Génération d’illustrations à partir d’un prompt.";
   const defaultLimitations =
     provider.type === "text"
-      ? preset === "codex"
-        ? "Plus lent qu’un petit modèle API et soumis aux limites de l’abonnement ChatGPT."
+      ? preset === "codex" || preset === "claude"
+        ? `Plus lent qu’un petit modèle API et soumis aux limites de l’abonnement ${preset === "claude" ? "Claude" : "ChatGPT"}.`
         : "La qualité, le prix et la vitesse varient fortement d’un modèle à l’autre."
       : provider.type === "tts"
         ? preset === "piper"
@@ -3951,13 +3958,15 @@ function ProviderSettingsCard({
             </div>
           </div>
         )}
-        {preset === "piper" || preset === "codex" ? (
+        {preset === "piper" || preset === "codex" || preset === "claude" ? (
           <div className="provider-endpoint">
             <small>Exécution</small>
             <code>
               {preset === "piper"
                 ? "Locale sur ce serveur — aucune clé API"
-                : "Codex CLI sur ce serveur — connexion ChatGPT"}
+                : preset === "codex"
+                  ? "Codex CLI sur ce serveur — connexion ChatGPT"
+                  : "Claude Code CLI sur ce serveur — connexion Claude"}
             </code>
           </div>
         ) : preset === "custom" ? (
@@ -3975,7 +3984,7 @@ function ProviderSettingsCard({
             <code>{effectiveBaseUrl}</code>
           </div>
         )}
-        {preset !== "piper" && preset !== "codex" && (
+        {preset !== "piper" && preset !== "codex" && preset !== "claude" && (
           <Field label="Clé API">
             <input
               type="password"
@@ -4028,6 +4037,16 @@ function ProviderSettingsCard({
             Sol privilégie la qualité, Terra l’équilibre, Luna la rapidité et la
             légèreté. La liste vient directement des modèles disponibles pour
             ton compte ChatGPT dans Codex.
+          </p>
+        </>
+      )}
+      {provider.type === "text" && preset === "claude" && (
+        <>
+          <ClaudeConnection api={api} />
+          <p className="provider-note">
+            Sonnet est recommandé pour les histoires, Opus privilégie la qualité
+            et Haiku la rapidité. Les générations utilisent le crédit mensuel
+            Agent SDK associé à ton abonnement Claude.
           </p>
         </>
       )}
@@ -4160,6 +4179,129 @@ function CodexConnection({
               ? "Connexion en attente…"
               : "Connecter mon compte ChatGPT"}
           </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+type ClaudeConnectionStatus = {
+  connected: boolean;
+  status: "idle" | "pending" | "connected" | "error";
+  url?: string;
+  detail?: string;
+  error?: string;
+  email?: string;
+  subscriptionType?: string;
+};
+
+function ClaudeConnection({
+  api,
+}: {
+  api: <T>(url: string, init?: RequestInit) => Promise<T>;
+}) {
+  const [status, setStatus] = useState<ClaudeConnectionStatus | null>(null);
+  const [authorizationCode, setAuthorizationCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const refresh = useCallback(
+    () => api<ClaudeConnectionStatus>("/api/providers/claude").then(setStatus),
+    [api],
+  );
+  useEffect(() => {
+    queueMicrotask(() => void refresh());
+  }, [refresh]);
+  useEffect(() => {
+    if (status?.status !== "pending") return;
+    const timer = window.setInterval(() => void refresh(), 2_000);
+    return () => window.clearInterval(timer);
+  }, [refresh, status?.status]);
+  const mutate = async (body: Record<string, string>) => {
+    setBusy(true);
+    try {
+      setStatus(
+        await api<ClaudeConnectionStatus>("/api/providers/claude", {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
+      );
+    } catch (error) {
+      setStatus({
+        connected: false,
+        status: "error",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="provider-note codex-connection">
+      <strong>Connexion Claude Code CLI</strong>
+      {status?.connected ? (
+        <>
+          <p>
+            Compte Claude connecté
+            {status.email ? ` (${status.email})` : ""}. Le scénario peut
+            utiliser l’abonnement Claude.
+          </p>
+          <button
+            type="button"
+            className="ghost compact"
+            disabled={busy}
+            onClick={() => void mutate({ action: "logout" })}
+          >
+            Déconnecter Claude Code
+          </button>
+        </>
+      ) : (
+        <>
+          <p>
+            La connexion OAuth est conservée uniquement dans le volume privé du
+            serveur.
+          </p>
+          {status?.url && (
+            <div className="store-url-example">
+              <small>Ouvre cette adresse et autorise Claude Code</small>
+              <a href={status.url} target="_blank" rel="noreferrer">
+                Ouvrir la connexion Claude
+              </a>
+              <label>
+                <span>Code affiché après autorisation</span>
+                <input
+                  value={authorizationCode}
+                  onChange={(event) => setAuthorizationCode(event.target.value)}
+                  placeholder="Collez ici le code Claude"
+                />
+              </label>
+              <button
+                type="button"
+                className="secondary compact"
+                disabled={busy || authorizationCode.trim().length < 4}
+                onClick={() =>
+                  void mutate({
+                    action: "code",
+                    code: authorizationCode.trim(),
+                  })
+                }
+              >
+                Valider le code
+              </button>
+            </div>
+          )}
+          {status?.detail && <small>{status.detail}</small>}
+          {status?.error && <span className="field-error">{status.error}</span>}
+          {!status?.url && (
+            <button
+              type="button"
+              className="secondary compact"
+              disabled={busy || status?.status === "pending"}
+              onClick={() => void mutate({ action: "start" })}
+            >
+              {status?.status === "pending"
+                ? "Connexion en attente…"
+                : "Connecter mon compte Claude"}
+            </button>
+          )}
         </>
       )}
     </div>

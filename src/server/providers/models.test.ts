@@ -79,4 +79,22 @@ describe("provider model catalogs", () => {
     expect(models[0]?.id).toBe("gpt-image-2");
     expect(models[0]?.supportsReferenceImage).toBe(true);
   });
+
+  it("exposes Claude Code models only for text generation", async () => {
+    const textModels = await listProviderModels({
+      type: "text",
+      preset: "claude",
+    });
+    const imageModels = await listProviderModels({
+      type: "image",
+      preset: "claude",
+    });
+    expect(textModels.map((model) => model.id)).toEqual([
+      "sonnet",
+      "opus",
+      "haiku",
+      "default",
+    ]);
+    expect(imageModels).toEqual([]);
+  });
 });
