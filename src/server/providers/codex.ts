@@ -261,6 +261,7 @@ export async function generateNarrativeWithCodex(
 export async function generateImageWithCodex(
   prompt: string,
   outputPath: string,
+  referenceImagePath?: string,
 ) {
   const status = await getCodexLoginStatus();
   if (!status.connected)
@@ -274,7 +275,12 @@ export async function generateImageWithCodex(
   const generatedImagesDirectory = path.join(CODEX_HOME, "generated_images");
   const generationStartedAt = Date.now();
   await fs.mkdir(workDirectory, { recursive: true });
-  const instruction = `$telmi-story-illustrator Crée une illustration Telmi pour une histoire enfantine.\n\nRôle de l’image et contexte visuel : ${prompt}\n\nRespecte strictement la description textuelle constante du personnage, de l’univers et du style graphique. N’essaie pas de lire un fichier de référence local.\n\nEnregistre le résultat final dans ${requestedOutput}.`;
+  const localReference = referenceImagePath
+    ? path.join(workDirectory, "personnages-reference.png")
+    : undefined;
+  if (referenceImagePath && localReference)
+    await fs.copyFile(referenceImagePath, localReference);
+  const instruction = `$telmi-story-illustrator Crée une illustration Telmi pour une histoire enfantine.\n\nRôle de l’image et contexte visuel : ${prompt}\n\nRespecte strictement la description constante du personnage, de l’univers et du style graphique.${localReference ? ` Utilise impérativement l’image ${localReference} comme référence visuelle pour conserver exactement les personnages, leurs couleurs, proportions et accessoires. Ne la recopie pas comme une planche : compose la nouvelle scène demandée.` : ""}\n\nEnregistre le résultat final dans ${requestedOutput}.`;
   let diagnosticOutput = "";
   try {
     await new Promise<void>((resolve, reject) => {

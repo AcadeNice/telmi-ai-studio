@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import OpenAI, { toFile } from "openai";
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
@@ -25,14 +25,32 @@ async function generateWithOpenRouter(
   baseUrl: string,
   model: string,
   prompt: string,
+  referenceImagePath?: string,
 ) {
+  const inputReferences = referenceImagePath
+    ? [
+        {
+          type: "image_url",
+          image_url: {
+            url: `data:image/png;base64,${(
+              await fs.readFile(referenceImagePath)
+            ).toString("base64")}`,
+          },
+        },
+      ]
+    : undefined;
   const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/images`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${apiKey}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ model, prompt, size: "1024x1024" }),
+    body: JSON.stringify({
+      model,
+      prompt,
+      size: "1024x1024",
+      input_references: inputReferences,
+    }),
     signal: AbortSignal.timeout(180_000),
   });
   const payload = (await response
@@ -51,12 +69,13 @@ export async function generateImage(
   prompt: string,
   outputPath: string,
   choiceNavigation = false,
+  referenceImagePath?: string,
 ) {
   const config = getProviderConfig("image");
   if (config.provider.toLowerCase() === "codex") {
     const temporary = `${outputPath}.codex-source`;
     try {
-      await generateImageWithCodex(prompt, temporary);
+      await generateImageWithCodex(prompt, temporary, referenceImagePath);
       await fs.mkdir(path.dirname(outputPath), { recursive: true });
       await sharp(temporary)
         .resize(640, 480, { fit: "cover" })
@@ -77,16 +96,15 @@ export async function generateImage(
         config.baseUrl!,
         model,
         prompt,
+        referenceImagePath,
       )
-    : await new OpenAI({
-        apiKey: config.apiKey,
-        baseURL: config.baseUrl ?? undefined,
-      }).images.generate({
+    : await generateWithOpenAiCompatible(
+        config.apiKey,
+        config.baseUrl,
         model,
         prompt,
-        size: "1024x1024",
-        response_format: "b64_json",
-      });
+        referenceImagePath,
+      );
   const encoded = response?.data?.[0]?.b64_json;
   if (!encoded)
     throw new Error("Le fournisseur image n’a retourné aucune image.");
@@ -99,6 +117,60 @@ export async function generateImage(
     .png({ compressionLevel: 9 })
     .toFile(outputPath);
   return { outputPath, bytes: (await fs.stat(outputPath)).size };
+}
+
+async function generateWithOpenAiCompatible(
+  apiKey: string,
+  baseUrl: string | null,
+  model: string,
+  prompt: string,
+  referenceImagePath?: string,
+) {
+  const client = new OpenAI({ apiKey, baseURL: baseUrl ?? undefined });
+  if (!referenceImagePath)
+    return client.images.generate({
+      model,
+      prompt,
+      size: "1024x1024",
+      response_format: "b64_json",
+    });
+  return client.images.edit({
+    model,
+    image: await toFile(
+      await fs.readFile(referenceImagePath),
+      "personnages-reference.png",
+      { type: "image/png" },
+    ),
+    prompt,
+    size: "1024x1024",
+    response_format: "b64_json",
+  });
+}
+
+export async function supportsConfiguredImageReferences() {
+  const config = getProviderConfig("image");
+  const provider = config.provider.toLowerCase();
+  const selectedModel = config.model ?? "gpt-image-1";
+  const model = selectedModel.toLowerCase();
+  if (provider === "codex") return true;
+  if (!isOpenRouter(config.baseUrl))
+    return model.includes("gpt-image") || model.includes("chatgpt-image");
+  const response = await fetch(
+    `${config.baseUrl!.replace(/\/+$/, "")}/images/models/${selectedModel}/endpoints`,
+    {
+      headers: { authorization: `Bearer ${config.apiKey}` },
+      signal: AbortSignal.timeout(15_000),
+    },
+  ).catch(() => null);
+  if (!response?.ok) return false;
+  const payload = (await response.json().catch(() => null)) as {
+    endpoints?: Array<{
+      supported_parameters?: Record<string, unknown>;
+    }>;
+  } | null;
+  return (payload?.endpoints ?? []).some((endpoint) =>
+    Object.hasOwn(endpoint.supported_parameters ?? {}, "input_references"),
+  );
 }
 
 function choiceNavigationOverlay() {

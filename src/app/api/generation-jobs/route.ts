@@ -15,7 +15,10 @@ export async function POST(request: Request) {
   try {
     await requireMutationSession(request);
     const input = schema.parse(await readJson(request));
-    const job = createGenerationJob(input.versionId, input.overrideBudget);
+    const job = await createGenerationJob(
+      input.versionId,
+      input.overrideBudget,
+    );
     const dispatch = scheduleInternalPipeline(job!.id);
     return Response.json({ job, dispatch }, { status: 202 });
   } catch (error) {

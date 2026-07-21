@@ -28,7 +28,10 @@ import {
   usageRecords,
 } from "@/server/db/schema";
 import { ApiError } from "@/server/api/response";
-import { generateImage } from "@/server/providers/image";
+import {
+  generateImage,
+  supportsConfiguredImageReferences,
+} from "@/server/providers/image";
 import { generateSpeech } from "@/server/providers/tts";
 import { getProviderConfig } from "@/server/providers/config";
 import { loadNarrative } from "@/server/stories/service";
@@ -153,7 +156,10 @@ export function recordUsage(
   }
 }
 
-export function createGenerationJob(versionId: string, overrideBudget = false) {
+export async function createGenerationJob(
+  versionId: string,
+  overrideBudget = false,
+) {
   ensureDatabase();
   const version = db
     .select()
@@ -182,6 +188,15 @@ export function createGenerationJob(versionId: string, overrideBudget = false) {
       "INVALID_GRAPH",
       "Le graphe narratif comporte des erreurs bloquantes.",
       { graph: validation.issues.map((item) => item.message) },
+    );
+  if (
+    (await supportsConfiguredImageReferences()) &&
+    !approvedCharacterReferencePath(versionId)
+  )
+    throw new ApiError(
+      409,
+      "REFERENCE_IMAGE_REQUIRED",
+      "Générez puis validez la référence des personnages avant les autres illustrations.",
     );
   const budget = getBudgetState(versionId);
   const activeReserved =
@@ -365,6 +380,27 @@ export function getGenerationJob(id: string) {
   };
 }
 
+function approvedCharacterReferencePath(versionId: string) {
+  const asset = db
+    .select()
+    .from(generatedAssets)
+    .where(
+      and(
+        eq(generatedAssets.versionId, versionId),
+        eq(generatedAssets.type, "image"),
+        eq(generatedAssets.sceneKey, "__character_reference__"),
+      ),
+    )
+    .get();
+  if (!asset?.metadataJson) return null;
+  try {
+    const metadata = JSON.parse(asset.metadataJson) as { approved?: boolean };
+    return metadata.approved === true ? asset.path : null;
+  } catch {
+    return null;
+  }
+}
+
 function recordAsset(
   versionId: string,
   sceneKey: string | null,
@@ -543,6 +579,7 @@ async function runImages(jobId: string) {
   const imageProvider = getProviderConfig("image").provider;
   const illustrationMode = parameters.illustrationMode ?? "choices";
   const visualContext = buildStoryVisualContext(narrative, parameters);
+  const characterReferencePath = approvedCharacterReferencePath(version.id);
   const base = path.join(versionDirectory(story.id, version.version), "assets");
   const imageDir = path.join(base, "images");
   const coverPath = path.join(base, "cover.png");
@@ -592,7 +629,12 @@ async function runImages(jobId: string) {
     const heartbeat = setInterval(updateHeartbeat, 5_000);
     heartbeat.unref();
     try {
-      return await generateImage(prompt, filePath, choiceNavigation);
+      return await generateImage(
+        prompt,
+        filePath,
+        choiceNavigation,
+        characterReferencePath ?? undefined,
+      );
     } finally {
       clearInterval(heartbeat);
     }

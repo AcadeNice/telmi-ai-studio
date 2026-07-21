@@ -106,6 +106,8 @@ type MediaReviewAsset = {
   voiceId?: string;
   source: "generated" | "uploaded";
   contentUrl: string;
+  role?: "character_reference";
+  approved?: boolean;
 };
 
 type MediaReview = {
@@ -117,6 +119,8 @@ type MediaReview = {
   readOnly: boolean;
   imageEditable?: boolean;
   audioEditable?: boolean;
+  referenceSupported?: boolean;
+  referenceApproved?: boolean;
 };
 
 type NarrativeProgress = {
@@ -1751,6 +1755,8 @@ function StoryStudio({
   const [busy, setBusy] = useState("");
   const [scenarioProgress, setScenarioProgress] =
     useState<NarrativeProgress | null>(null);
+  const [referenceProgress, setReferenceProgress] =
+    useState<NarrativeProgress | null>(null);
   const [refinementInstruction, setRefinementInstruction] = useState("");
   const [preservedSceneIds, setPreservedSceneIds] = useState<string[]>([]);
   const [preservedChoiceIds, setPreservedChoiceIds] = useState<string[]>([]);
@@ -1891,6 +1897,71 @@ function StoryStudio({
       onRefresh();
     } catch (error) {
       if (
+        !overrideBudget &&
+        error instanceof ApiClientError &&
+        error.code === "REFERENCE_IMAGE_REQUIRED"
+      ) {
+        const startedAt = new Date().toISOString();
+        setReferenceProgress({
+          status: "running",
+          percent: 15,
+          lines: [
+            {
+              at: startedAt,
+              message:
+                "Création de la fiche visuelle des personnages avec le modèle sélectionné.",
+            },
+          ],
+        });
+        try {
+          const review = await api<MediaReview>(
+            `/api/stories/${story.id}/versions/${version.id}/character-reference`,
+            {
+              method: "POST",
+              body: JSON.stringify({ action: "generate" }),
+            },
+          );
+          setMediaReview(review);
+          setReferenceProgress({
+            status: "completed",
+            percent: 100,
+            lines: [
+              {
+                at: startedAt,
+                message:
+                  "Création de la fiche visuelle des personnages avec le modèle sélectionné.",
+              },
+              {
+                at: new Date().toISOString(),
+                message: "Référence prête pour le contrôle parental.",
+              },
+            ],
+          });
+          onNotice({
+            tone: "info",
+            text: "La référence des personnages est prête. Vérifiez-la et validez-la avant de générer les autres images.",
+          });
+          onRefresh();
+        } catch (referenceError) {
+          const message =
+            referenceError instanceof Error
+              ? referenceError.message
+              : String(referenceError);
+          setReferenceProgress({
+            status: "failed",
+            percent: 15,
+            lines: [
+              {
+                at: startedAt,
+                message:
+                  "Création de la fiche visuelle des personnages avec le modèle sélectionné.",
+              },
+              { at: new Date().toISOString(), message },
+            ],
+          });
+          onNotice({ tone: "error", text: message });
+        }
+      } else if (
         !overrideBudget &&
         error instanceof ApiClientError &&
         error.code === "BUDGET_EXCEEDED"
@@ -2189,6 +2260,22 @@ function StoryStudio({
           />
         </div>
       )}
+      {referenceProgress && referenceProgress.status !== "idle" && (
+        <div className="page-card terminal-card-wrapper">
+          <GenerationTerminal
+            title="Création de la référence des personnages"
+            subtitle="Première image à valider avant les autres illustrations"
+            percent={referenceProgress.percent}
+            running={referenceProgress.status === "running"}
+            defaultOpen={referenceProgress.status === "failed"}
+            lines={referenceProgress.lines.map((line) => ({
+              at: line.at,
+              message: line.message,
+              tone: referenceProgress.status === "failed" ? "error" : "normal",
+            }))}
+          />
+        </div>
+      )}
       {budgetConfirmation && (
         <div className="budget-confirmation page-card">
           <BadgeEuro />
@@ -2313,6 +2400,7 @@ function StoryStudio({
           onChange={setMediaReview}
           onNotice={onNotice}
           onRefresh={onRefresh}
+          onStartGeneration={() => requestMediaGeneration()}
         />
       )}
       {narrative ? (
@@ -2588,6 +2676,7 @@ function MediaReviewPanel({
   onChange,
   onNotice,
   onRefresh,
+  onStartGeneration,
 }: {
   storyId: string;
   version: StoryVersion;
@@ -2598,6 +2687,7 @@ function MediaReviewPanel({
   onChange: (review: MediaReview) => void;
   onNotice: (notice: { tone: "ok" | "error" | "info"; text: string }) => void;
   onRefresh: () => void;
+  onStartGeneration: () => Promise<void>;
 }) {
   const [voices, setVoices] = useState<TtsVoice[]>([]);
   const [voicesError, setVoicesError] = useState("");
@@ -2607,8 +2697,13 @@ function MediaReviewPanel({
     status: "running" | "completed" | "failed";
     lines: GenerationLogLine[];
   } | null>(null);
-  const images = review.list.filter((asset) =>
-    ["cover", "image"].includes(asset.type),
+  const reference = review.list.find(
+    (asset) => asset.role === "character_reference",
+  );
+  const images = review.list.filter(
+    (asset) =>
+      ["cover", "image"].includes(asset.type) &&
+      asset.role !== "character_reference",
   );
   const audios = review.list.filter((asset) =>
     ["title_audio", "audio"].includes(asset.type),
@@ -2781,6 +2876,33 @@ function MediaReviewPanel({
     }
   };
 
+  const approveReferenceAndGenerate = async () => {
+    if (!reference) return;
+    onBusy("approve-reference");
+    try {
+      const next = await api<MediaReview>(
+        `/api/stories/${storyId}/versions/${version.id}/character-reference`,
+        {
+          method: "POST",
+          body: JSON.stringify({ action: "approve" }),
+        },
+      );
+      onChange(next);
+      onNotice({
+        tone: "ok",
+        text: "Les personnages sont validés. La génération complète peut commencer.",
+      });
+      await onStartGeneration();
+    } catch (error) {
+      onNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      onBusy("");
+    }
+  };
+
   return (
     <section className="media-review page-card">
       <div className="media-review-heading">
@@ -2814,6 +2936,49 @@ function MediaReviewPanel({
           defaultOpen={mediaOperation.status === "failed"}
           lines={mediaOperation.lines}
         />
+      )}
+
+      {reference && (
+        <div className="character-reference-review">
+          <div className="media-section-heading">
+            <ImageIcon />
+            <div>
+              <h3>Référence des personnages</h3>
+              <p>
+                Cette image servira de modèle visuel à toutes les illustrations
+                suivantes. Régénérez-la ou envoyez la vôtre avant validation.
+              </p>
+            </div>
+          </div>
+          <div className="character-reference-layout">
+            <MediaImageCard
+              key={`${reference.id}:${reference.contentUrl}`}
+              asset={reference}
+              disabled={imagesLocked || Boolean(busy)}
+              busy={busy.endsWith(reference.id)}
+              onRegenerate={(prompt) => regenerate(reference, { prompt })}
+              onUpload={(file) => upload(reference, file)}
+            />
+            <div className="character-reference-approval">
+              <strong>À contrôler avant de continuer</strong>
+              <ul>
+                <li>apparence et espèce de chaque personnage ;</li>
+                <li>couleurs, vêtements et accessoires ;</li>
+                <li>style graphique général de l’histoire.</li>
+              </ul>
+              <button
+                className="primary"
+                disabled={Boolean(busy) || reference.approved}
+                onClick={() => void approveReferenceAndGenerate()}
+              >
+                <CheckCircle2 />
+                {reference.approved
+                  ? "Personnages validés"
+                  : "Valider et générer toutes les illustrations"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <div className="media-section-heading">
@@ -3226,6 +3391,9 @@ type ProviderModelOption = {
   name: string;
   description?: string;
   priceLabel?: string;
+  strengths?: string;
+  limitations?: string;
+  supportsReferenceImage?: boolean;
 };
 
 const providerChoices: Record<
@@ -3636,6 +3804,29 @@ function ProviderSettingsCard({
   const selectedModelExists = catalog.list.some(
     (model) => model.id === provider.model,
   );
+  const selectedModel = catalog.list.find(
+    (model) => model.id === provider.model,
+  );
+  const defaultStrengths =
+    provider.type === "text"
+      ? preset === "codex"
+        ? "Très bon suivi des contraintes, JSON structuré et scénarios à branches complexes."
+        : "Génération structurée du scénario avec les capacités annoncées par le fournisseur."
+      : provider.type === "tts"
+        ? preset === "piper"
+          ? "Gratuit, local, privé et sans quota de fournisseur."
+          : "Voix plus naturelles et expressives, selon le modèle et la voix choisis."
+        : "Génération d’illustrations à partir d’un prompt.";
+  const defaultLimitations =
+    provider.type === "text"
+      ? preset === "codex"
+        ? "Plus lent qu’un petit modèle API et soumis aux limites de l’abonnement ChatGPT."
+        : "La qualité, le prix et la vitesse varient fortement d’un modèle à l’autre."
+      : provider.type === "tts"
+        ? preset === "piper"
+          ? "Voix moins naturelles et moins expressives qu’un service vocal premium."
+          : "Service payant ; rendu et coût dépendent du modèle et du quota du compte."
+        : "La cohérence d’un personnage doit être contrôlée sur chaque image.";
 
   return (
     <div className="provider-row">
@@ -3727,12 +3918,39 @@ function ProviderSettingsCard({
               )}
               {catalog.list.map((model) => (
                 <option key={model.id} value={model.id}>
-                  {`${model.name === model.id ? model.id : `${model.name} — ${model.id}`}${model.priceLabel ? ` — ${model.priceLabel}` : ""}`}
+                  {`${provider.type === "image" && model.supportsReferenceImage ? "★ Référence — " : ""}${model.name === model.id ? model.id : `${model.name} — ${model.id}`}${model.priceLabel ? ` — ${model.priceLabel}` : ""}`}
                 </option>
               ))}
             </select>
           )}
         </Field>
+        {selectedModel && (
+          <div className="provider-model-profile">
+            <div className="provider-model-profile-heading">
+              <strong>{selectedModel.name}</strong>
+              {provider.type === "image" &&
+                selectedModel.supportsReferenceImage && (
+                  <span className="reference-capability">
+                    <CheckCircle2 /> Référence visuelle compatible
+                  </span>
+                )}
+            </div>
+            <p>
+              {selectedModel.description ??
+                "Le fournisseur ne publie pas de description détaillée pour ce modèle."}
+            </p>
+            <div className="provider-model-tradeoffs">
+              <div>
+                <small>Points forts</small>
+                <span>{selectedModel.strengths ?? defaultStrengths}</span>
+              </div>
+              <div>
+                <small>Limites</small>
+                <span>{selectedModel.limitations ?? defaultLimitations}</span>
+              </div>
+            </div>
+          </div>
+        )}
         {preset === "piper" || preset === "codex" ? (
           <div className="provider-endpoint">
             <small>Exécution</small>

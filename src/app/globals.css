@@ -1666,6 +1666,102 @@ button {
   font-size: 13px;
   line-height: 1.45;
 }
+.provider-model-profile {
+  grid-column: 1 / -1;
+  margin: -2px 0 14px;
+  padding: 15px 16px;
+  border: 1px solid #ded5f5;
+  border-radius: 15px;
+  background: linear-gradient(145deg, #fbf9ff, #f5f0ff);
+}
+.provider-model-profile-heading,
+.reference-capability {
+  display: flex;
+  align-items: center;
+}
+.provider-model-profile-heading {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.provider-model-profile > p {
+  margin: 8px 0 13px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.reference-capability {
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #e4f8ec;
+  color: #247346;
+  font-size: 12px;
+  font-weight: 800;
+}
+.reference-capability svg {
+  width: 14px;
+  height: 14px;
+}
+.provider-model-tradeoffs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.provider-model-tradeoffs > div {
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.72);
+}
+.provider-model-tradeoffs small,
+.provider-model-tradeoffs span {
+  display: block;
+}
+.character-reference-review {
+  margin: 24px 0;
+  padding: 18px;
+  border: 2px solid #9b7df0;
+  border-radius: 20px;
+  background: linear-gradient(145deg, #fbf9ff, #f2ecff);
+}
+.character-reference-review .media-section-heading {
+  margin-top: 0;
+}
+.character-reference-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.75fr);
+  gap: 18px;
+  align-items: start;
+}
+.character-reference-approval {
+  padding: 18px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(80, 55, 135, 0.08);
+}
+.character-reference-approval strong {
+  display: block;
+  margin-bottom: 8px;
+}
+.character-reference-approval ul {
+  margin: 0 0 18px;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.character-reference-approval button {
+  width: 100%;
+}
+.provider-model-tradeoffs small {
+  margin-bottom: 4px;
+  color: #665c7a;
+  font-weight: 800;
+}
+.provider-model-tradeoffs span {
+  font-size: 12px;
+  line-height: 1.45;
+}
 .compact-switch {
   flex: 0 0 auto;
   margin: 0;
@@ -1886,6 +1982,10 @@ button {
   }
   .media-audio-card .media-card-actions {
     justify-content: flex-start;
+  }
+  .character-reference-layout,
+  .provider-model-tradeoffs {
+    grid-template-columns: 1fr;
   }
 }
 @media (max-width: 620px) {

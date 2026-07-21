@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
+import path from "node:path";
 import { promisify } from "node:util";
 import sharp from "sharp";
 import { ApiError } from "@/server/api/response";
@@ -26,8 +27,12 @@ import {
 import { recordUsage } from "@/server/jobs/service";
 import { generateSpeech } from "@/server/providers/tts";
 import { getProviderConfig } from "@/server/providers/config";
-import { generateImage } from "@/server/providers/image";
+import {
+  generateImage,
+  supportsConfiguredImageReferences,
+} from "@/server/providers/image";
 import { loadNarrative } from "@/server/stories/service";
+import { versionDirectory } from "@/server/storage/paths";
 import { validateAudio, validateImage } from "@/server/telmi/pack";
 
 const execFileAsync = promisify(execFile);
@@ -42,7 +47,11 @@ type AssetMetadata = {
   source?: "generated" | "uploaded";
   originalName?: string;
   linkedTo?: string;
+  role?: "character_reference";
+  approved?: boolean;
 };
+
+export const CHARACTER_REFERENCE_SCENE_KEY = "__character_reference__";
 
 type VersionContext = {
   story: typeof stories.$inferSelect;
@@ -82,6 +91,17 @@ function derivedAssetMetadata(
   if (!narrative) return {};
   const visualContext = buildStoryVisualContext(narrative, parameters);
   const existing = parseMetadata(asset.metadataJson);
+  if (
+    asset.type === "image" &&
+    asset.sceneKey === CHARACTER_REFERENCE_SCENE_KEY
+  )
+    return {
+      ...existing,
+      label: "Référence des personnages",
+      source: existing.source ?? "generated",
+      role: "character_reference",
+      approved: existing.approved === true,
+    };
   if (asset.type === "cover")
     return {
       prompt:
@@ -216,6 +236,8 @@ export async function getMediaReview(storyId: string, versionId: string) {
         text: metadata.text,
         voiceId: metadata.voiceId,
         source: metadata.source ?? "generated",
+        role: metadata.role,
+        approved: metadata.approved,
         contentUrl: `/api/media-assets/${asset.id}/content?v=${asset.updatedAt.getTime()}`,
       };
     });
@@ -227,6 +249,11 @@ export async function getMediaReview(storyId: string, versionId: string) {
   );
   const complete = expected.every((item) =>
     assets.some((asset) => sameAsset(asset, item)),
+  );
+  const referenceAsset = assets.find(
+    (asset) =>
+      asset.type === "image" &&
+      asset.sceneKey === CHARACTER_REFERENCE_SCENE_KEY,
   );
   const normallyEditable = (["validated", "ready"] as string[]).includes(
     context.version.status,
@@ -246,6 +273,11 @@ export async function getMediaReview(storyId: string, versionId: string) {
     readOnly: !normallyEditable,
     imageEditable: normallyEditable,
     audioEditable,
+    referenceSupported: await supportsConfiguredImageReferences().catch(
+      () => false,
+    ),
+    referenceApproved:
+      parseMetadata(referenceAsset?.metadataJson ?? null).approved === true,
   };
 }
 
@@ -339,6 +371,170 @@ async function updateAsset(
     .run();
 }
 
+export function getApprovedCharacterReference(versionId: string) {
+  const asset = db
+    .select()
+    .from(generatedAssets)
+    .where(
+      and(
+        eq(generatedAssets.versionId, versionId),
+        eq(generatedAssets.type, "image"),
+        eq(generatedAssets.sceneKey, CHARACTER_REFERENCE_SCENE_KEY),
+      ),
+    )
+    .get();
+  if (!asset || parseMetadata(asset.metadataJson).approved !== true)
+    return null;
+  return asset;
+}
+
+function characterReferencePrompt(context: VersionContext) {
+  const narrative = loadNarrative(context.version.id);
+  if (!narrative)
+    throw new ApiError(409, "NARRATIVE_REQUIRED", "Scénario absent.");
+  const parameters = JSON.parse(
+    context.version.parametersJson,
+  ) as CreationParameters;
+  const visualContext = buildStoryVisualContext(narrative, parameters);
+  return [
+    "Planche de référence visuelle des personnages récurrents de cette histoire pour enfant",
+    visualContext,
+    "Montrer le personnage principal en pied, de face et de trois quarts, avec son apparence complète clairement visible",
+    "Ajouter les autres personnages récurrents importants s’ils apparaissent dans l’histoire, bien séparés et entièrement visibles",
+    "Fond simple et clair, lumière neutre, palette et proportions définitives qui devront rester identiques dans toutes les scènes",
+    "Aucune mise en scène narrative, aucun cadre, aucune légende, aucun mot, aucune lettre, aucun chiffre, aucun symbole typographique",
+  ].join(". ");
+}
+
+export async function generateCharacterReference(
+  storyId: string,
+  versionId: string,
+  customPrompt?: string,
+) {
+  const context = getVersionContext(storyId, versionId);
+  if (!(await supportsConfiguredImageReferences()))
+    throw new ApiError(
+      409,
+      "REFERENCE_IMAGE_UNSUPPORTED",
+      "Le modèle d’image sélectionné ne déclare pas la prise en charge d’une image de référence.",
+    );
+  if (!(["validated", "ready"] as string[]).includes(context.version.status))
+    throw new ApiError(
+      409,
+      "REFERENCE_IMAGE_NOT_EDITABLE",
+      "Validez d’abord le scénario avant de créer la référence des personnages.",
+    );
+  const prompt = customPrompt?.trim() || characterReferencePrompt(context);
+  const filePath = path.join(
+    versionDirectory(context.story.id, context.version.version),
+    "assets",
+    "characters-reference.png",
+  );
+  await generateImage(prompt, filePath);
+  const stat = await fs.stat(filePath);
+  const existing = db
+    .select()
+    .from(generatedAssets)
+    .where(
+      and(
+        eq(generatedAssets.versionId, versionId),
+        eq(generatedAssets.type, "image"),
+        eq(generatedAssets.sceneKey, CHARACTER_REFERENCE_SCENE_KEY),
+      ),
+    )
+    .get();
+  const metadata: AssetMetadata = {
+    prompt,
+    label: "Référence des personnages",
+    source: "generated",
+    role: "character_reference",
+    approved: false,
+  };
+  if (existing) {
+    db.update(generatedAssets)
+      .set({
+        provider: getProviderConfig("image").provider,
+        path: filePath,
+        bytes: stat.size,
+        metadataJson: JSON.stringify(metadata),
+        updatedAt: new Date(),
+      })
+      .where(eq(generatedAssets.id, existing.id))
+      .run();
+  } else {
+    db.insert(generatedAssets)
+      .values({
+        id: randomUUID(),
+        versionId,
+        sceneKey: CHARACTER_REFERENCE_SCENE_KEY,
+        type: "image",
+        provider: getProviderConfig("image").provider,
+        path: filePath,
+        mimeType: "image/png",
+        bytes: stat.size,
+        metadataJson: JSON.stringify(metadata),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .run();
+  }
+  recordUsage(
+    versionId,
+    getProviderConfig("image").provider,
+    "character-reference",
+    1,
+    getProviderConfig("image").provider.toLowerCase() === "codex" ? 0 : 4,
+  );
+  await invalidateCompiledPack(context);
+  return getMediaReview(storyId, versionId);
+}
+
+export async function approveCharacterReference(
+  storyId: string,
+  versionId: string,
+) {
+  const context = getVersionContext(storyId, versionId);
+  const asset = db
+    .select()
+    .from(generatedAssets)
+    .where(
+      and(
+        eq(generatedAssets.versionId, versionId),
+        eq(generatedAssets.type, "image"),
+        eq(generatedAssets.sceneKey, CHARACTER_REFERENCE_SCENE_KEY),
+      ),
+    )
+    .get();
+  if (!asset || !(await validateImage(asset.path)))
+    throw new ApiError(
+      409,
+      "REFERENCE_IMAGE_REQUIRED",
+      "Générez ou envoyez d’abord une référence des personnages.",
+    );
+  await updateAsset(asset, asset.provider ?? "image", {
+    ...derivedAssetMetadata(context, asset),
+    approved: true,
+    role: "character_reference",
+  });
+  const staleImages = db
+    .select()
+    .from(generatedAssets)
+    .where(eq(generatedAssets.versionId, versionId))
+    .all()
+    .filter(
+      (item) =>
+        ["cover", "title_image"].includes(item.type) ||
+        (item.type === "image" &&
+          item.sceneKey !== CHARACTER_REFERENCE_SCENE_KEY),
+    );
+  await Promise.all(
+    staleImages.map((item) => fs.rm(item.path, { force: true })),
+  );
+  for (const stale of staleImages)
+    db.delete(generatedAssets).where(eq(generatedAssets.id, stale.id)).run();
+  return getMediaReview(storyId, versionId);
+}
+
 async function syncTitleImage(
   context: VersionContext,
   cover: typeof generatedAssets.$inferSelect,
@@ -391,6 +587,9 @@ export async function regenerateMedia(
         Boolean(
           narrative && choice && isMultipleChoiceImage(narrative, choice),
         ),
+        asset.sceneKey === CHARACTER_REFERENCE_SCENE_KEY
+          ? undefined
+          : getApprovedCharacterReference(versionId)?.path,
       );
       await fs.rename(temporary, asset.path);
       const provider = getProviderConfig("image").provider;
@@ -398,6 +597,10 @@ export async function regenerateMedia(
         ...metadata,
         prompt,
         source: "generated" as const,
+        approved:
+          asset.sceneKey === CHARACTER_REFERENCE_SCENE_KEY
+            ? false
+            : metadata.approved,
       };
       await updateAsset(asset, provider, nextMetadata);
       if (asset.type === "cover")
@@ -498,6 +701,10 @@ export async function uploadMedia(
       ...metadata,
       source: "uploaded" as const,
       originalName: file.name.slice(0, 240),
+      approved:
+        asset.sceneKey === CHARACTER_REFERENCE_SCENE_KEY
+          ? false
+          : metadata.approved,
     };
     await updateAsset(asset, "upload", nextMetadata);
     if (asset.type === "cover")

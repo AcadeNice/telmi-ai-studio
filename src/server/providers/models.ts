@@ -17,6 +17,9 @@ export type ProviderModel = {
   name: string;
   description?: string;
   priceLabel?: string;
+  strengths?: string;
+  limitations?: string;
+  supportsReferenceImage?: boolean;
 };
 
 const PRESET_BASE_URLS: Partial<Record<ProviderPreset, string>> = {
@@ -73,8 +76,14 @@ export async function listProviderModels(input: {
           {
             id: "gpt-image-2",
             name: "GPT Image 2 — abonnement Codex",
-            description: "Génération via le skill officiel $imagegen.",
+            description:
+              "Génération d’illustrations via Codex et le skill officiel $imagegen.",
             priceLabel: "inclus dans l’abonnement · consommation variable",
+            strengths:
+              "Bonne compréhension des consignes, retouches et réutilisation d’une fiche de personnages.",
+            limitations:
+              "Plus lent qu’une API directe et soumis aux limites de l’abonnement ChatGPT.",
+            supportsReferenceImage: true,
           },
         ]
       : listCodexTextModels();
@@ -136,7 +145,7 @@ export async function listProviderModels(input: {
   );
   return input.type === "image" && input.preset === "openai"
     ? models.map((model) => ({
-        ...model,
+        ...enrichImageModel(model),
         priceLabel: openAiImagePriceLabel(model.id),
       }))
     : models;
@@ -191,8 +200,48 @@ async function listOpenRouterModels(
     ),
   );
   return type === "image"
-    ? attachOpenRouterImagePrices(baseUrl, apiKey, models)
+    ? attachOpenRouterImagePrices(
+        baseUrl,
+        apiKey,
+        await listOpenRouterImageCapabilities(baseUrl, apiKey, models),
+      )
     : models;
+}
+
+async function listOpenRouterImageCapabilities(
+  baseUrl: string,
+  apiKey: string | undefined,
+  fallback: ProviderModel[],
+) {
+  const response = await fetch(`${baseUrl}/images/models`, {
+    headers: apiKey ? { authorization: `Bearer ${apiKey}` } : undefined,
+    signal: AbortSignal.timeout(30_000),
+  }).catch(() => null);
+  if (!response?.ok) return fallback.map(enrichImageModel);
+  const payload = (await response.json().catch(() => null)) as {
+    data?: Array<{
+      id?: string;
+      name?: string;
+      description?: string;
+      supported_parameters?: Record<string, unknown>;
+    }>;
+  } | null;
+  const models = (payload?.data ?? []).flatMap((model) =>
+    model.id
+      ? [
+          enrichImageModel({
+            id: model.id,
+            name: model.name || model.id,
+            description: model.description,
+            supportsReferenceImage: Object.hasOwn(
+              model.supported_parameters ?? {},
+              "input_references",
+            ),
+          }),
+        ]
+      : [],
+  );
+  return models.length ? models : fallback.map(enrichImageModel);
 }
 
 async function attachOpenRouterImagePrices(
@@ -218,8 +267,11 @@ async function attachOpenRouterImagePrices(
     },
   );
   await Promise.all(workers);
-  return result.sort((left, right) =>
-    left.name.localeCompare(right.name, "fr"),
+  return result.sort(
+    (left, right) =>
+      Number(right.supportsReferenceImage === true) -
+        Number(left.supportsReferenceImage === true) ||
+      left.name.localeCompare(right.name, "fr"),
   );
 }
 
@@ -302,6 +354,69 @@ export function openAiImagePriceLabel(modelId: string) {
   if (id.includes("dall-e-3")) return "≈ $0.04 · 1024×1024 qualité standard";
   if (id.includes("dall-e-2")) return "≈ $0.016 · 1024×1024";
   return undefined;
+}
+
+function enrichImageModel(model: ProviderModel): ProviderModel {
+  const id = model.id.toLowerCase();
+  const reference = model.supportsReferenceImage === true;
+  if (id.includes("gpt-image") || id.includes("chatgpt-image"))
+    return {
+      ...model,
+      supportsReferenceImage: model.supportsReferenceImage ?? true,
+      strengths:
+        "Très bonne fidélité aux consignes, édition d’images et cohérence à partir d’une référence.",
+      limitations:
+        "Le coût et le délai augmentent avec la qualité ; le rendu peut être moins stylisé que certains modèles spécialisés.",
+    };
+  if (id.includes("gemini") || id.includes("nano-banana"))
+    return {
+      ...model,
+      strengths:
+        "Bon suivi du contexte, retouche et cohérence des personnages lorsque les références sont acceptées.",
+      limitations:
+        "Le rendu et les capacités exactes varient selon la version Gemini et le fournisseur routé.",
+    };
+  if (id.includes("seedream"))
+    return {
+      ...model,
+      strengths:
+        "Illustrations détaillées, styles variés et bonne continuité visuelle avec une référence.",
+      limitations:
+        "Les petits accessoires et les scènes très chargées doivent rester contrôlés image par image.",
+    };
+  if (id.includes("flux"))
+    return {
+      ...model,
+      strengths:
+        "Très bon rendu visuel, lumière et détails ; adapté aux illustrations expressives.",
+      limitations: reference
+        ? "La référence améliore la cohérence, mais certains détails fins peuvent encore dériver."
+        : "Cette variante ne déclare pas d’image de référence ; cohérence moins fiable entre scènes.",
+    };
+  if (id.includes("ideogram"))
+    return {
+      ...model,
+      strengths:
+        "Bon pour les compositions graphiques et le texte intégré à une image.",
+      limitations:
+        "Moins prioritaire pour Telmi, qui demande des images sans texte et une forte continuité des personnages.",
+    };
+  if (id.includes("recraft"))
+    return {
+      ...model,
+      strengths:
+        "Excellent pour les aplats, styles illustrés, icônes et rendus vectoriels propres.",
+      limitations:
+        "Moins adapté aux personnages narratifs complexes et aux nombreuses variations émotionnelles.",
+    };
+  return {
+    ...model,
+    strengths:
+      model.description ?? "Modèle disponible pour la génération d’images.",
+    limitations: reference
+      ? "La référence améliore la continuité, mais chaque illustration doit être vérifiée."
+      : "Aucune référence visuelle n’est déclarée ; la cohérence entre scènes n’est pas garantie.",
+  };
 }
 
 export function matchesOpenRouterOutput(
