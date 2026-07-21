@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatApproximateUsdRange,
   inferProviderPreset,
   matchesOpenRouterOutput,
   matchesType,
+  openAiImagePriceLabel,
   providerBaseUrl,
 } from "./models";
 
@@ -40,5 +42,19 @@ describe("provider model catalogs", () => {
     expect(matchesOpenRouterOutput(["text"], "text")).toBe(true);
     expect(matchesOpenRouterOutput(["text", "image"], "text")).toBe(false);
     expect(matchesOpenRouterOutput(["text", "image"], "image")).toBe(true);
+  });
+
+  it("formats indicative per-image provider prices", () => {
+    expect(formatApproximateUsdRange([0.05], "image")).toBe("≈ $0.05/image");
+    expect(formatApproximateUsdRange([0.03, 0.08], "image")).toBe(
+      "≈ $0.03–$0.08/image",
+    );
+    expect(
+      formatApproximateUsdRange([0.02 * 1.048576], "image 1024×1024"),
+    ).toBe("≈ $0.021/image 1024×1024");
+    expect(openAiImagePriceLabel("gpt-image-1-mini")).toBe(
+      "≈ $0.005–$0.036 · 1024×1024 selon qualité",
+    );
+    expect(openAiImagePriceLabel("unknown-image-model")).toBeUndefined();
   });
 });

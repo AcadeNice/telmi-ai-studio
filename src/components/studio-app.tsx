@@ -3225,6 +3225,7 @@ type ProviderModelOption = {
   id: string;
   name: string;
   description?: string;
+  priceLabel?: string;
 };
 
 const providerChoices: Record<
@@ -3726,9 +3727,7 @@ function ProviderSettingsCard({
               )}
               {catalog.list.map((model) => (
                 <option key={model.id} value={model.id}>
-                  {model.name === model.id
-                    ? model.id
-                    : `${model.name} — ${model.id}`}
+                  {`${model.name === model.id ? model.id : `${model.name} — ${model.id}`}${model.priceLabel ? ` — ${model.priceLabel}` : ""}`}
                 </option>
               ))}
             </select>
@@ -3824,6 +3823,15 @@ function ProviderSettingsCard({
             ton abonnement Codex s’appliquent.
           </p>
         </>
+      )}
+      {provider.type === "image" && preset !== "codex" && (
+        <p className="provider-note">
+          Les prix affichés estiment l’image source de 1024 × 1024 px générée
+          par le fournisseur, avant son recadrage Telmi en 640 × 480 px. Ils
+          sont indicatifs, en dollars américains, hors taxes et éventuels frais
+          d’achat de crédits, et peuvent varier selon la qualité, le fournisseur
+          routé et les changements de tarif.
+        </p>
       )}
     </div>
   );

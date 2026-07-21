@@ -32,7 +32,7 @@ async function generateWithOpenRouter(
       authorization: `Bearer ${apiKey}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ model, prompt }),
+    body: JSON.stringify({ model, prompt, size: "1024x1024" }),
     signal: AbortSignal.timeout(180_000),
   });
   const payload = (await response

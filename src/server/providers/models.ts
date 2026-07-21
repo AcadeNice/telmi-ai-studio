@@ -16,6 +16,7 @@ export type ProviderModel = {
   id: string;
   name: string;
   description?: string;
+  priceLabel?: string;
 };
 
 const PRESET_BASE_URLS: Partial<Record<ProviderPreset, string>> = {
@@ -73,6 +74,7 @@ export async function listProviderModels(input: {
             id: "gpt-image-2",
             name: "GPT Image 2 — abonnement Codex",
             description: "Génération via le skill officiel $imagegen.",
+            priceLabel: "inclus dans l’abonnement · consommation variable",
           },
         ]
       : listCodexTextModels();
@@ -126,12 +128,18 @@ export async function listProviderModels(input: {
     return listElevenLabsModels(baseUrl, input.apiKey);
   }
   if (!input.apiKey) throwApiKeyRequired();
-  return listOpenAiCompatibleModels(
+  const models = await listOpenAiCompatibleModels(
     baseUrl,
     input.apiKey,
     input.type,
     input.preset === "custom",
   );
+  return input.type === "image" && input.preset === "openai"
+    ? models.map((model) => ({
+        ...model,
+        priceLabel: openAiImagePriceLabel(model.id),
+      }))
+    : models;
 }
 
 function throwApiKeyRequired(): never {
@@ -174,7 +182,7 @@ async function listOpenRouterModels(
       "MODEL_CATALOG_ERROR",
       `OpenRouter n’a pas retourné son catalogue (HTTP ${response.status}).`,
     );
-  return normalizeModels(
+  const models = normalizeModels(
     (payload?.data ?? []).filter((model) =>
       matchesOpenRouterOutput(
         model.architecture?.output_modalities ?? [],
@@ -182,6 +190,118 @@ async function listOpenRouterModels(
       ),
     ),
   );
+  return type === "image"
+    ? attachOpenRouterImagePrices(baseUrl, apiKey, models)
+    : models;
+}
+
+async function attachOpenRouterImagePrices(
+  baseUrl: string,
+  apiKey: string | undefined,
+  models: ProviderModel[],
+) {
+  const result: ProviderModel[] = [];
+  const pending = [...models];
+  const workers = Array.from(
+    { length: Math.min(6, pending.length) },
+    async () => {
+      while (pending.length) {
+        const model = pending.shift();
+        if (!model) return;
+        const priceLabel = await openRouterImagePriceLabel(
+          baseUrl,
+          model.id,
+          apiKey,
+        ).catch(() => undefined);
+        result.push({ ...model, priceLabel });
+      }
+    },
+  );
+  await Promise.all(workers);
+  return result.sort((left, right) =>
+    left.name.localeCompare(right.name, "fr"),
+  );
+}
+
+async function openRouterImagePriceLabel(
+  baseUrl: string,
+  modelId: string,
+  apiKey?: string,
+) {
+  const response = await fetch(
+    `${baseUrl}/images/models/${modelId}/endpoints`,
+    {
+      headers: apiKey ? { authorization: `Bearer ${apiKey}` } : undefined,
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  if (!response.ok) return undefined;
+  const payload = (await response.json().catch(() => null)) as {
+    endpoints?: Array<{
+      pricing?: Array<{
+        billable?: string;
+        unit?: string;
+        cost_usd?: number;
+      }>;
+    }>;
+  } | null;
+  const directPrices = (payload?.endpoints ?? [])
+    .flatMap((endpoint) => endpoint.pricing ?? [])
+    .filter(
+      (price) =>
+        price.billable === "output_image" &&
+        price.unit === "image" &&
+        Number.isFinite(price.cost_usd),
+    )
+    .map((price) => Number(price.cost_usd));
+  if (directPrices.length)
+    return formatApproximateUsdRange(directPrices, "image 1024×1024");
+  const megapixelPrices = (payload?.endpoints ?? [])
+    .flatMap((endpoint) => endpoint.pricing ?? [])
+    .filter(
+      (price) =>
+        price.billable === "output_image" &&
+        price.unit === "megapixel" &&
+        Number.isFinite(price.cost_usd),
+    )
+    .map((price) => Number(price.cost_usd));
+  return megapixelPrices.length
+    ? formatApproximateUsdRange(
+        megapixelPrices.map((price) => price * 1.048576),
+        "image 1024×1024",
+      )
+    : undefined;
+}
+
+export function formatApproximateUsdRange(
+  values: number[],
+  unit: "image" | "image 1024×1024",
+) {
+  const valid = values.filter((value) => Number.isFinite(value) && value >= 0);
+  if (!valid.length) return undefined;
+  const minimum = Math.min(...valid);
+  const maximum = Math.max(...valid);
+  const format = (value: number) =>
+    `$${value
+      .toFixed(value < 0.01 ? 4 : 3)
+      .replace(/0+$/, "")
+      .replace(/\.$/, "")}`;
+  return minimum === maximum
+    ? `≈ ${format(minimum)}/${unit}`
+    : `≈ ${format(minimum)}–${format(maximum)}/${unit}`;
+}
+
+export function openAiImagePriceLabel(modelId: string) {
+  const id = modelId.toLowerCase();
+  if (id.includes("gpt-image-1-mini"))
+    return "≈ $0.005–$0.036 · 1024×1024 selon qualité";
+  if (id.includes("gpt-image-1.5") || id.includes("chatgpt-image"))
+    return "≈ $0.009–$0.133 · 1024×1024 selon qualité";
+  if (id === "gpt-image-1" || id.startsWith("gpt-image-1-"))
+    return "≈ $0.011–$0.167 · 1024×1024 selon qualité";
+  if (id.includes("dall-e-3")) return "≈ $0.04 · 1024×1024 qualité standard";
+  if (id.includes("dall-e-2")) return "≈ $0.016 · 1024×1024";
+  return undefined;
 }
 
 export function matchesOpenRouterOutput(
